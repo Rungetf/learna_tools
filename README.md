@@ -62,6 +62,32 @@ pip install learna_tools
 ```
 
 
+## Usage
+
+We provide simple command line interfaces for the following algorithms
+
+- LEARNA
+- Meta-LEARNA
+- Meta-LEARNA-Adapt
+- libLEARNA
+
+In the following, we provide some information about the different approaches for RNA design as well as on how to run each individual tool.
+
+### LEARNA
+
+The easiest way of running `LEARNA` from commandline is to simply type
+
+```
+$ learna --target-structure <RNA structure in dot-bracket format>
+```
+
+a real example of a `LEARNA` call then looks as follows
+
+```
+$ learna --target-structure ...(((((....)))))...
+```
+
+
 
 
 
