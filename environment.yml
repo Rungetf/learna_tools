@@ -1,0 +1,6 @@
+name: learna_tools
+channels:
+  - bioconda
+dependencies:
+  - viennarna=2.4.8
+  - python=3.6
