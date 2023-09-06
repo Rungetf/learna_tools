@@ -19,7 +19,7 @@ if __name__ == "__main__":
 
     # Data
     parser.add_argument(
-        "--target_structure_path", type=Path, help="Path to sequence to run on"
+        "--target_structure", type=Path, help="Path to sequence to run on"
     )
     parser.add_argument("--data_dir", default="data", help="Data directory")
     parser.add_argument("--dataset", type=Path, help="Available: eterna, rfam_taneda")
@@ -32,49 +32,45 @@ if __name__ == "__main__":
         help="List of target structure ids to run on",
     )
 
-    # Model
-    parser.add_argument("--restore_path", type=Path, help="From where to load model")
-    parser.add_argument("--stop_learning", action="store_true", help="Stop learning")
-    parser.add_argument("--random_agent", action="store_true", help="Use random agent")
 
     # Timeout behaviour
     parser.add_argument("--timeout", default=None, type=int, help="Maximum time to run")
 
     # Hyperparameters
-    parser.add_argument("--learning_rate", type=float, help="Learning rate to use")
+    parser.add_argument("--learning_rate", type=float, default=0.0005991629320464973, help="Learning rate to use")
     parser.add_argument(
-        "--mutation_threshold", type=int, help="Enable MUTATION with set threshold"
+        "--mutation_threshold", type=int, default=5, help="Enable MUTATION with set threshold"
     )
     parser.add_argument(
-        "--reward_exponent", default=1, type=float, help="Exponent for reward shaping"
+        "--reward_exponent", default=9.33503385734547, type=float, help="Exponent for reward shaping"
     )
     parser.add_argument(
-        "--state_radius", default=0, type=int, help="Radius around current site"
+        "--state_radius", default=32, type=int, help="Radius around current site"
     )
     parser.add_argument(
-        "--conv_sizes", type=int, default=[1], nargs="+", help="Size of conv kernels"
+        "--conv_sizes", type=int, default=[17, 5], nargs="+", help="Size of conv kernels"
     )
     parser.add_argument(
-        "--conv_channels", type=int, default=[50], nargs="+", help="Channel size of conv"
+        "--conv_channels", type=int, default=[7, 18], nargs="+", help="Channel size of conv"
     )
     parser.add_argument(
-        "--num_fc_layers", type=int, default=2, help="Number of FC layers to use"
+        "--num_fc_layers", type=int, default=1, help="Number of FC layers to use"
     )
     parser.add_argument(
-        "--fc_units", type=int, default=50, help="Number of units to use per FC layer"
+        "--fc_units", type=int, default=57, help="Number of units to use per FC layer"
     )
     parser.add_argument(
-        "--batch_size", type=int, default=8, help="Batch size for ppo agent"
+        "--batch_size", type=int, default=126, help="Batch size for ppo agent"
     )
     parser.add_argument(
-        "--entropy_regularization", type=float, default=1.5e-3, help="The output entropy"
+        "--entropy_regularization", type=float, default=6.762991409135427e-05, help="The output entropy"
     )
     parser.add_argument(
-        "--restart_timeout", type=int, help="Time after which to restart the agent"
+        "--restart_timeout", type=int, default=1800, help="Time after which to restart the agent"
     )
-    parser.add_argument("--lstm_units", type=int, help="The number of lstm units")
-    parser.add_argument("--num_lstm_layers", type=int, help="The number of lstm layers")
-    parser.add_argument("--embedding_size", type=int, help="The size of the embedding")
+    parser.add_argument("--lstm_units", type=int, default=28, help="The number of lstm units")
+    parser.add_argument("--num_lstm_layers", type=int, default=1, help="The number of lstm layers")
+    parser.add_argument("--embedding_size", type=int, default=3, help="The size of the embedding")
 
     args = parser.parse_args()
 
@@ -91,7 +87,7 @@ if __name__ == "__main__":
         learning_rate=args.learning_rate,
         batch_size=args.batch_size,
         entropy_regularization=args.entropy_regularization,
-        random_agent=args.random_agent,
+        random_agent=False,
     )
     env_config = RnaDesignEnvironmentConfig(
         mutation_threshold=args.mutation_threshold,
@@ -102,14 +98,14 @@ if __name__ == "__main__":
         dataset=args.dataset,
         data_dir=args.data_dir,
         target_structure_ids=args.target_structure_ids,
-        target_structure_path=args.target_structure_path,
+        target_structure_path=args.target_structure,
     )
 
     design_rna(
         dot_brackets,
         timeout=args.timeout,
-        restore_path=args.restore_path,
-        stop_learning=args.stop_learning,
+        restore_path=None,
+        stop_learning=False,
         restart_timeout=args.restart_timeout,
         network_config=network_config,
         agent_config=agent_config,
