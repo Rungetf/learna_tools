@@ -212,10 +212,19 @@ class EpisodeInfo:
     Information class.
     """
 
-    __slots__ = ["target_id", "time", "normalized_hamming_distance"]
+    __slots__ = ["target_id",
+                 "time",
+                 "normalized_hamming_distance",
+                 "hamming_distance",
+                 "structure",
+                 "sequence",
+                 ]
     target_id: int
     time: float
     normalized_hamming_distance: float
+    hamming_distance: int
+    structure: str
+    sequence: str
 
 
 class RnaDesignEnvironment(Environment):
@@ -289,15 +298,16 @@ class RnaDesignEnvironment(Environment):
         differing_sites = _string_difference_indices(
             self.target.dot_bracket, folded_design
         )
-        hamming_distances = []
+        candidates = []
         for mutation in product("AGCU", repeat=len(differing_sites)):
             mutated = self.design.get_mutated(mutation, differing_sites)
             folded_mutated, _ = fold(mutated.primary)
             hamming_distance = hamming(folded_mutated, self.target.dot_bracket)
-            hamming_distances.append(hamming_distance)
             if hamming_distance == 0:  # For better timing results
-                return 0
-        return min(hamming_distances)
+                return 0, mutated, folded_mutated
+            candidates.append((hamming_distance, mutated, folded_mutated))
+
+        return min(candidates, key=lambda x: x[0])
 
     def _get_reward(self, terminal):
         """
@@ -311,11 +321,11 @@ class RnaDesignEnvironment(Environment):
         """
         if not terminal:
             return 0
-
-        folded_design, _ = fold(self.design.primary)
+        primary = self.design.primary
+        folded_design, _ = fold(primary)
         hamming_distance = hamming(folded_design, self.target.dot_bracket)
         if 0 < hamming_distance < self._env_config.mutation_threshold:
-            hamming_distance = self._local_improvement(folded_design)
+            hamming_distance, primary, folded_design  = self._local_improvement(folded_design)
 
         normalized_hamming_distance = hamming_distance / len(self.target)
 
@@ -324,6 +334,9 @@ class RnaDesignEnvironment(Environment):
             target_id=self.target.id,
             time=time.time(),
             normalized_hamming_distance=normalized_hamming_distance,
+            hamming_distance=hamming_distance,
+            structure=folded_design,
+            sequence=primary,
         )
         self.episodes_info.append(episode_info)
 

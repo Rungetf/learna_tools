@@ -1,4 +1,9 @@
 import time
+import warnings
+warnings.filterwarnings('ignore')
+
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # '2'
 
 import tensorflow as tf
 from learna_tools.tensorforce.runner import Runner
@@ -6,8 +11,12 @@ from learna_tools.tensorforce.runner import Runner
 from learna_tools.learna.agent import NetworkConfig, get_network, AgentConfig, get_agent_fn
 from learna_tools.learna.environment import RnaDesignEnvironment, RnaDesignEnvironmentConfig
 
+SOLUTIONS = []
+PREDICTIONS = []
+candidates = []
 
-def _get_episode_finished(timeout, stop_once_solved):
+
+def _get_episode_finished(timeout, stop_once_solved, num_solutions):
     """
     Check for timeout after each episode of designing one entire target structure.
 
@@ -22,16 +31,34 @@ def _get_episode_finished(timeout, stop_once_solved):
 
     def episode_finished(runner):
         env = runner.environment
-
+        target_id = env.episodes_info[-1].target_id
         candidate_solution = env.design.primary
         last_reward = runner.episode_rewards[-1]
         last_fractional_hamming = env.episodes_info[-1].normalized_hamming_distance
         elapsed_time = time.time() - start_time
-        print(elapsed_time, last_reward, last_fractional_hamming, candidate_solution)
+        hamming_distance = env.episodes_info[-1].hamming_distance
+        structure = env.episodes_info[-1].structure
+        PREDICTIONS.append({'Id': target_id,
+                            'time': elapsed_time,
+                            'hamming_distance': hamming_distance,
+                            'rel_hamming_distance': last_fractional_hamming,
+                            'sequence': candidate_solution,
+                            'structure': structure,
+                            })
+        if last_reward == 1.0 and candidate_solution not in candidates:
+            candidates.append(candidate_solution)
+            SOLUTIONS.append({'Id': target_id,
+                              'time': elapsed_time,
+                              'hamming_distance': hamming_distance,
+                              'rel_hamming_distance': last_fractional_hamming,
+                              'sequence': candidate_solution,
+                              'structure': structure,
+                              })
+        # print(elapsed_time, last_reward, last_fractional_hamming, candidate_solution)
 
         no_timeout = not timeout or elapsed_time < timeout
         stop_since_solved = stop_once_solved and last_reward == 1.0
-        keep_running = not stop_since_solved and no_timeout
+        keep_running = not stop_since_solved and no_timeout and len(SOLUTIONS) < num_solutions
         return keep_running
 
     return episode_finished
@@ -46,6 +73,7 @@ def design_rna(
     network_config,
     agent_config,
     env_config,
+    num_solutions,
 ):
     """
     Main function for RNA design. Instantiate an environment and an agent to run in a
@@ -86,14 +114,15 @@ def design_rna(
     )
     runner = Runner(get_agent, environment)
 
-    stop_once_solved = len(dot_brackets) == 1
+    # stop_once_solved = len(dot_brackets) == 1
+    stop_once_solved = False
     runner.run(
         deterministic=False,
         restart_timeout=restart_timeout,
         stop_learning=stop_learning,
-        episode_finished=_get_episode_finished(timeout, stop_once_solved),
+        episode_finished=_get_episode_finished(timeout, stop_once_solved, num_solutions),
     )
-    return environment.episodes_info
+    return PREDICTIONS, SOLUTIONS
 
 
 if __name__ == "__main__":
@@ -162,6 +191,8 @@ if __name__ == "__main__":
     parser.add_argument("--num_lstm_layers", type=int, help="The number of lstm layers")
     parser.add_argument("--embedding_size", type=int, help="The size of the embedding")
 
+    parser.add_argument("--min_solutions", type=int, default=1, help="The number of lstm units")
+
     args = parser.parse_args()
 
     network_config = NetworkConfig(
@@ -200,4 +231,5 @@ if __name__ == "__main__":
         network_config=network_config,
         agent_config=agent_config,
         env_config=env_config,
+        num_solutions=args.min_solutions,
     )

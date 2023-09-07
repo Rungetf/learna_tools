@@ -1,6 +1,14 @@
 #!/usr/bin/env python
 
+import warnings
+warnings.filterwarnings('ignore')
+
+
 import argparse
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # '2'
+
+import pandas as pd
 
 from learna_tools.learna.design_rna import design_rna
 from learna_tools.learna.data.parse_dot_brackets import parse_dot_brackets
@@ -19,8 +27,12 @@ if __name__ == "__main__":
 
     # Data
     parser.add_argument(
-        "--target_structure", type=Path, help="Path to sequence to run on"
+        "--target_structure", type=str, help="Structure in dot-bracket notation"
     )
+    parser.add_argument(
+        "--input_file", type=Path, help="Path to sequence to run on"
+    )
+
     parser.add_argument("--data_dir", default="data", help="Data directory")
     parser.add_argument("--dataset", type=Path, help="Available: eterna, rfam_taneda")
     parser.add_argument(
@@ -72,6 +84,10 @@ if __name__ == "__main__":
     parser.add_argument("--num_lstm_layers", type=int, default=1, help="The number of lstm layers")
     parser.add_argument("--embedding_size", type=int, default=3, help="The size of the embedding")
 
+    parser.add_argument("--hamming_tolerance", type=int, default=0, help="Allowed tolerance of Hamming Distance for structure")
+
+    parser.add_argument("--min_solutions", type=int, default=1, help="Number of solutions")
+
     args = parser.parse_args()
 
     network_config = NetworkConfig(
@@ -94,14 +110,20 @@ if __name__ == "__main__":
         reward_exponent=args.reward_exponent,
         state_radius=args.state_radius,
     )
-    dot_brackets = parse_dot_brackets(
-        dataset=args.dataset,
-        data_dir=args.data_dir,
-        target_structure_ids=args.target_structure_ids,
-        target_structure_path=args.target_structure,
-    )
 
-    design_rna(
+    if args.target_structure:
+        dot_brackets = [args.target_structure]
+    elif args.input_file:
+        dot_brackets = parse_dot_brackets(
+            dataset=args.dataset,
+            data_dir=args.data_dir,
+            target_structure_ids=args.target_structure_ids,
+            target_structure_path=args.target_structure,
+        )
+    else:
+        raise UserWarning('Please either enter a target structure or an input file')
+
+    preds, sols = design_rna(
         dot_brackets,
         timeout=args.timeout,
         restore_path=None,
@@ -110,4 +132,18 @@ if __name__ == "__main__":
         network_config=network_config,
         agent_config=agent_config,
         env_config=env_config,
+        num_solutions=args.min_solutions,
     )
+
+    predictions = pd.DataFrame(preds)
+    solutions = pd.DataFrame(sols)
+
+    if args.hamming_tolerance > 0:
+        subopt = predictions[predictions['hamming_distance'] <= args.hamming_tolerance]
+        subopt.sort_values(by='hamming_distance', inplace=True)
+        solutions = pd.concat([solutions, subopt])
+        solutions = solutions.drop_duplicates('sequence')
+        solutions = solutions.reset_index(drop=True)
+
+    # print(predictions)
+    print(solutions.to_markdown())

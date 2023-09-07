@@ -35,6 +35,7 @@ setup(
         "pyyaml",
         "scikit-learn",
         "LinearFold",
+        "tabulate",
     ],
     classifiers=[
         "Programming Language :: Python :: 3.6",
