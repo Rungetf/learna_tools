@@ -87,6 +87,22 @@ The LEARNA algorithm takes a secondary structure in dot-bracket notation as inpu
 The algorithm updates its policy each time it has generated a new sequence and, thus, gets better and better over time by successively updating its weights based on previous predictions.
 We provide a version of *LEARNA* with tuned hyperparameters as described in our ICLR'19 paper [Learning to Design RNA](https://openreview.net/pdf?id=ByfyHh05tQ).
 
+#### Input
+*LEARNA* either reads a secondary structure directly from the commandline, or from an input file, starting with a structure Id, followed by the desired structure in dot-bracket notation.
+
+An example input file might look as follows:
+
+```
+> Test structure 1
+....((((....))))....
+> Test structure 2
+..((....))..
+> Test structure 3
+....((((....))))...............
+```
+
+If multiple structures are provided with the input file, *LEARNA* will try to solve one structure after the other.
+
 The easiest way of running `LEARNA` from commandline is to simply type
 
 ```

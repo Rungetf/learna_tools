@@ -1,12 +1,22 @@
 #!/usr/bin/env python
 
+import warnings
+warnings.filterwarnings('ignore')
+
+
 import argparse
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # '2'
+
+import pandas as pd
 
 from learna_tools.learna.design_rna import design_rna
 from learna_tools.learna.data.parse_dot_brackets import parse_dot_brackets
 
 from learna_tools.learna.agent import NetworkConfig, get_network, AgentConfig, get_agent_fn
 from learna_tools.learna.environment import RnaDesignEnvironment, RnaDesignEnvironmentConfig
+
+from learna_tools.data import read_task_description
 
 
 
@@ -19,8 +29,15 @@ if __name__ == "__main__":
 
     # Data
     parser.add_argument(
-        "--target_structure_path", type=Path, help="Path to sequence to run on"
+        "--target_structure", type=str, help="Structure in dot-bracket notation"
     )
+    parser.add_argument(
+        "--target_id", type=str, help="Id of the input target structure", required=False
+    )
+    parser.add_argument(
+        "--input_file", type=Path, help="Path to sequence to run on"
+    )
+
     parser.add_argument("--data_dir", default="data", help="Data directory")
     parser.add_argument("--dataset", type=Path, help="Available: eterna, rfam_taneda")
     parser.add_argument(
@@ -32,49 +49,53 @@ if __name__ == "__main__":
         help="List of target structure ids to run on",
     )
 
-    # Model
-    parser.add_argument("--restore_path", type=Path, help="From where to load model")
-    parser.add_argument("--stop_learning", action="store_true", help="Stop learning")
-    parser.add_argument("--random_agent", action="store_true", help="Use random agent")
+    parser.add_argument("--restore_path", type=Path, default='models/224_0_1', help="From where to load model")
+    # parser.add_argument("--stop_learning", action="store_true", help="Stop learning")
+    # parser.add_argument("--random_agent", action="store_true", help="Use random agent")
+
 
     # Timeout behaviour
-    parser.add_argument("--timeout", default=None, type=int, help="Maximum time to run")
+    parser.add_argument("--timeout", default=600, type=int, help="Maximum time to run")
 
     # Hyperparameters
-    parser.add_argument("--learning_rate", type=float, help="Learning rate to use")
+    parser.add_argument("--learning_rate", type=float, default=6.442010833400271e-05, help="Learning rate to use")
     parser.add_argument(
-        "--mutation_threshold", type=int, help="Enable MUTATION with set threshold"
+        "--mutation_threshold", type=int, default=5, help="Enable MUTATION with set threshold"
     )
     parser.add_argument(
-        "--reward_exponent", default=1, type=float, help="Exponent for reward shaping"
+        "--reward_exponent", default=8.932893783628236, type=float, help="Exponent for reward shaping"
     )
     parser.add_argument(
-        "--state_radius", default=0, type=int, help="Radius around current site"
+        "--state_radius", default=29, type=int, help="Radius around current site"
     )
     parser.add_argument(
-        "--conv_sizes", type=int, default=[1], nargs="+", help="Size of conv kernels"
+        "--conv_sizes", type=int, default=[11, 3], nargs="+", help="Size of conv kernels"
     )
     parser.add_argument(
-        "--conv_channels", type=int, default=[50], nargs="+", help="Channel size of conv"
+        "--conv_channels", type=int, default=[10, 3], nargs="+", help="Channel size of conv"
     )
     parser.add_argument(
-        "--num_fc_layers", type=int, default=2, help="Number of FC layers to use"
+        "--num_fc_layers", type=int, default=1, help="Number of FC layers to use"
     )
     parser.add_argument(
-        "--fc_units", type=int, default=50, help="Number of units to use per FC layer"
+        "--fc_units", type=int, default=52, help="Number of units to use per FC layer"
     )
     parser.add_argument(
-        "--batch_size", type=int, default=8, help="Batch size for ppo agent"
+        "--batch_size", type=int, default=123, help="Batch size for ppo agent"
     )
     parser.add_argument(
-        "--entropy_regularization", type=float, default=1.5e-3, help="The output entropy"
+        "--entropy_regularization", type=float, default=0.00015087352506343337, help="The output entropy"
     )
     parser.add_argument(
-        "--restart_timeout", type=int, help="Time after which to restart the agent"
+        "--restart_timeout", type=int, default=1800, help="Time after which to restart the agent"
     )
-    parser.add_argument("--lstm_units", type=int, help="The number of lstm units")
-    parser.add_argument("--num_lstm_layers", type=int, help="The number of lstm layers")
-    parser.add_argument("--embedding_size", type=int, help="The size of the embedding")
+    parser.add_argument("--lstm_units", type=int, default=3, help="The number of lstm units")
+    parser.add_argument("--num_lstm_layers", type=int, default=0, help="The number of lstm layers")
+    parser.add_argument("--embedding_size", type=int, default=2, help="The size of the embedding")
+
+    parser.add_argument("--hamming_tolerance", type=int, default=0, help="Allowed tolerance of Hamming Distance for structure")
+
+    parser.add_argument("--min_solutions", type=int, default=1, help="Number of solutions")
 
     args = parser.parse_args()
 
@@ -91,27 +112,46 @@ if __name__ == "__main__":
         learning_rate=args.learning_rate,
         batch_size=args.batch_size,
         entropy_regularization=args.entropy_regularization,
-        random_agent=args.random_agent,
+        random_agent=False,
     )
     env_config = RnaDesignEnvironmentConfig(
         mutation_threshold=args.mutation_threshold,
         reward_exponent=args.reward_exponent,
         state_radius=args.state_radius,
     )
-    dot_brackets = parse_dot_brackets(
-        dataset=args.dataset,
-        data_dir=args.data_dir,
-        target_structure_ids=args.target_structure_ids,
-        target_structure_path=args.target_structure_path,
-    )
 
-    design_rna(
+    if args.target_structure:
+        if args.target_id:
+            dot_brackets = [(args.target_id, args.target_structure)]
+        else:
+            dot_brackets = [args.target_structure]
+    elif args.input_file:
+        data = read_task_description(args.input_file)
+        dot_brackets = list((i, db) for i, db in zip(data['Id'], data['str']))
+    else:
+        raise UserWarning('Please either enter a target structure or an input file')
+
+    preds, sols = design_rna(
         dot_brackets,
         timeout=args.timeout,
         restore_path=args.restore_path,
-        stop_learning=args.stop_learning,
+        stop_learning=False,
         restart_timeout=args.restart_timeout,
         network_config=network_config,
         agent_config=agent_config,
         env_config=env_config,
+        num_solutions=args.min_solutions,
     )
+
+    predictions = pd.DataFrame(preds)
+    solutions = pd.DataFrame(sols)
+
+    if args.hamming_tolerance > 0:
+        subopt = predictions[predictions['hamming_distance'] <= args.hamming_tolerance]
+        subopt.sort_values(by='hamming_distance', inplace=True)
+        solutions = pd.concat([solutions, subopt])
+        solutions = solutions.drop_duplicates('sequence')
+        solutions = solutions.reset_index(drop=True)
+
+    # print(predictions)
+    print(solutions.to_markdown())

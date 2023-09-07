@@ -16,6 +16,8 @@ from learna_tools.learna.data.parse_dot_brackets import parse_dot_brackets
 from learna_tools.learna.agent import NetworkConfig, get_network, AgentConfig, get_agent_fn
 from learna_tools.learna.environment import RnaDesignEnvironment, RnaDesignEnvironmentConfig
 
+from learna_tools.data import read_task_description
+
 
 
 if __name__ == "__main__":
@@ -28,6 +30,9 @@ if __name__ == "__main__":
     # Data
     parser.add_argument(
         "--target_structure", type=str, help="Structure in dot-bracket notation"
+    )
+    parser.add_argument(
+        "--target_id", type=str, help="Id of the input target structure", required=False
     )
     parser.add_argument(
         "--input_file", type=Path, help="Path to sequence to run on"
@@ -46,7 +51,7 @@ if __name__ == "__main__":
 
 
     # Timeout behaviour
-    parser.add_argument("--timeout", default=None, type=int, help="Maximum time to run")
+    parser.add_argument("--timeout", default=600, type=int, help="Maximum time to run")
 
     # Hyperparameters
     parser.add_argument("--learning_rate", type=float, default=0.0005991629320464973, help="Learning rate to use")
@@ -112,14 +117,13 @@ if __name__ == "__main__":
     )
 
     if args.target_structure:
-        dot_brackets = [args.target_structure]
+        if args.target_id:
+            dot_brackets = [(args.target_id, args.target_structure)]
+        else:
+            dot_brackets = [args.target_structure]
     elif args.input_file:
-        dot_brackets = parse_dot_brackets(
-            dataset=args.dataset,
-            data_dir=args.data_dir,
-            target_structure_ids=args.target_structure_ids,
-            target_structure_path=args.target_structure,
-        )
+        data = read_task_description(args.input_file)
+        dot_brackets = list((i, db) for i, db in zip(data['Id'], data['str']))
     else:
         raise UserWarning('Please either enter a target structure or an input file')
 

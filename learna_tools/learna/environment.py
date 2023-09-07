@@ -94,7 +94,7 @@ class _Target(object):
 
     _id_counter = 0
 
-    def __init__(self, dot_bracket, env_config):
+    def __init__(self, dot_bracket, env_config, target_id=None):
         """
         Initialize a target structure.
 
@@ -103,7 +103,10 @@ class _Target(object):
              env_config: The environment configuration.
         """
         _Target._id_counter += 1
-        self.id = _Target._id_counter  # For processing results
+        if target_id is None:
+            self.id = _Target._id_counter  # For processing results
+        else:
+            self.id = target_id
         self.dot_bracket = dot_bracket
         self._pairing_encoding = _encode_pairing(self.dot_bracket)
         self.padded_encoding = _encode_dot_bracket(self.dot_bracket, env_config)
@@ -241,7 +244,10 @@ class RnaDesignEnvironment(Environment):
         """
         self._env_config = env_config
 
-        targets = [_Target(dot_bracket, self._env_config) for dot_bracket in dot_brackets]
+        if isinstance(dot_brackets[0], str):
+            targets = [_Target(dot_bracket, self._env_config) for dot_bracket in dot_brackets]
+        else:
+            targets = [_Target(dot_bracket, self._env_config, target_id=i) for i, dot_bracket in dot_brackets]
         self._target_gen = _random_epoch_gen(targets)
 
         self.target = None
