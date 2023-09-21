@@ -47,4 +47,4 @@ def hamming_with_n(designed_sequence=None, designed_structure=None, target_seque
     l1 = np.asarray(list(designed_structure))
     l2 = np.asarray(list(target_structure))
     distance = np.sum(((l1 != l2) & (l1 != 'N') & (l2 != 'N')).astype(np.int8))
-    return distance / len(designed_structure)
+    return distance   #  / len(designed_structure)

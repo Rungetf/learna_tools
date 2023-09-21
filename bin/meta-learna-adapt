@@ -18,6 +18,8 @@ from learna_tools.learna.environment import RnaDesignEnvironment, RnaDesignEnvir
 
 from learna_tools.data import read_task_description
 
+from learna_tools.visualization import plot_df_with_varna, display_varna_plot, plot_sequence_logo
+
 
 
 if __name__ == "__main__":
@@ -96,6 +98,14 @@ if __name__ == "__main__":
     parser.add_argument("--hamming_tolerance", type=int, default=0, help="Allowed tolerance of Hamming Distance for structure")
 
     parser.add_argument("--min_solutions", type=int, default=1, help="Number of solutions")
+    parser.add_argument("--diversity_loss", action="store_true", help="Use additional loss for diversity")
+    parser.add_argument("--plot_structure", action="store_true", help="Plot each structure with varna")
+    parser.add_argument("--show_plots", action="store_true", help="Show each plot generated")
+    parser.add_argument("--resolution", type=str, default='8.0', help="Resolution for structure plots")
+    parser.add_argument("--plot_logo", action="store_true", help="Plot sequence information as logo")
+    parser.add_argument("--show_logo", action="store_true", help="Plot sequence information as logo")
+
+
 
     args = parser.parse_args()
 
@@ -118,6 +128,7 @@ if __name__ == "__main__":
         mutation_threshold=args.mutation_threshold,
         reward_exponent=args.reward_exponent,
         state_radius=args.state_radius,
+        diversity_loss=args.diversity_loss,
     )
 
     if args.target_structure:
@@ -131,7 +142,7 @@ if __name__ == "__main__":
     else:
         raise UserWarning('Please either enter a target structure or an input file')
 
-    preds, sols = design_rna(
+    sols = design_rna(
         dot_brackets,
         timeout=args.timeout,
         restore_path=args.restore_path,
@@ -141,17 +152,29 @@ if __name__ == "__main__":
         agent_config=agent_config,
         env_config=env_config,
         num_solutions=args.min_solutions,
+        hamming_tolerance=args.hamming_tolerance,
     )
 
-    predictions = pd.DataFrame(preds)
+    # predictions = pd.DataFrame(preds)
     solutions = pd.DataFrame(sols)
-
     if args.hamming_tolerance > 0:
-        subopt = predictions[predictions['hamming_distance'] <= args.hamming_tolerance]
-        subopt.sort_values(by='hamming_distance', inplace=True)
-        solutions = pd.concat([solutions, subopt])
-        solutions = solutions.drop_duplicates('sequence')
-        solutions = solutions.reset_index(drop=True)
+        solutions.sort_values(by=['hamming_distance', 'time'], inplace=True)
+    else:
+        solutions.sort_values(by='time', inplace=True)
+
+    solutions = solutions.reset_index(drop=True)
+
+    # if args.hamming_tolerance > 0:
+    #     subopt = predictions[predictions['hamming_distance'] <= args.hamming_tolerance]
+    #     solutions = pd.concat([solutions, subopt])
+    #     solutions = solutions.drop_duplicates('sequence')
 
     # print(predictions)
     print(solutions.to_markdown())
+
+    if args.plot_structure:
+        plot_df_with_varna(solutions, show=args.show_plots, resolution=args.resolution)
+
+    if args.plot_logo:
+        plot_sequence_logo(solutions, show=args.show_logo)
+

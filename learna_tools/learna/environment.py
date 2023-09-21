@@ -1,13 +1,29 @@
 import time
+import math
 
 from itertools import product
 from dataclasses import dataclass
 from distance import hamming
+from collections import Counter
 
 import numpy as np
 from tensorforce.environments import Environment
 
 from RNA import fold
+
+
+def sequence_diversity_loss(count, n=3):
+    """
+    Maps the raw counts of appearances of the same sequences to the interval [0,1].
+
+    Using the same formula as Alphafold2 for the cluster_deletion_value feature:
+
+    2/\pi * arctan(d/3), where d are the raw counts.
+    """
+    # count = len(env_config['predictions'][prediction])
+
+    return (2 / math.pi) * math.atan((count / n))
+
 
 
 @dataclass
@@ -30,6 +46,7 @@ class RnaDesignEnvironmentConfig:
     state_radius: int = 5
     use_conv: bool = True
     use_embedding: bool = False
+    diversity_loss: bool = False
 
 
 def _string_difference_indices(s1, s2):
@@ -253,6 +270,7 @@ class RnaDesignEnvironment(Environment):
         self.target = None
         self.design = None
         self.episodes_info = []
+        self.predictions = []
 
     def __str__(self):
         return "RnaDesignEnvironment"
@@ -335,18 +353,31 @@ class RnaDesignEnvironment(Environment):
 
         normalized_hamming_distance = hamming_distance / len(self.target)
 
+        if self._env_config.diversity_loss:
+
+            count = Counter(self.predictions)[primary]
+            self.predictions.append(primary)
+            div_loss = sequence_diversity_loss(count / len(self.predictions))
+
+            loss = normalized_hamming_distance + div_loss
+
+            normalized_distance = min(1.0, loss)
+
+
+
+        normalized_distance = normalized_hamming_distance if not self._env_config.diversity_loss else normalized_distance
         # For hparam optimization
         episode_info = EpisodeInfo(
             target_id=self.target.id,
             time=time.time(),
-            normalized_hamming_distance=normalized_hamming_distance,
+            normalized_hamming_distance=normalized_distance,
             hamming_distance=hamming_distance,
             structure=folded_design,
             sequence=primary,
         )
         self.episodes_info.append(episode_info)
 
-        return (1 - normalized_hamming_distance) ** self._env_config.reward_exponent
+        return (1 - normalized_distance) ** self._env_config.reward_exponent
 
     def execute(self, actions):
         """

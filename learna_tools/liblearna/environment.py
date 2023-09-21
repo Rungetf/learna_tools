@@ -10,9 +10,6 @@ from dataclasses import dataclass
 from distance import hamming
 from io import StringIO
 from pathlib import Path
-from datetime import datetime
-
-from learna_tools.metrics.string_distance import hamming_with_n
 
 from tensorforce.environments import Environment
 from RNA import fold
@@ -64,9 +61,7 @@ class RnaDesignEnvironmentConfig:
     algorithm: str = 'rnafold'
     folding_counter: int = 0
     interactions: int = 0
-    seed: int = 1  # 1  # 123 # 0  # 137  # 42
-    rna_id: str = None
-    distance_metric: str = 'hamming'
+    seed: int = 42  # 1  # 123 # 0  # 137  # 42
 
 
 
@@ -133,13 +128,12 @@ def _fold_primary(primary, env_config):
     if env_config.algorithm == 'rnafold':
         folding = fold(primary)[0]
     elif env_config.algorithm == 'rnafold_mea':
-        now = datetime.utcnow().strftime('%Y-%m-%d-%H-%M-%S-%f')
-        pathname = '_'.join([str(env_config.rna_id), now])+'_rnafold.fasta'
+        pathname = ''.join([str(env_config.desired_gc)])+'_rnafold.fasta'
         rnafold_path = Path(pathname)
         with open(rnafold_path, 'w+') as f:
             f.write('>current' + '\n')
             f.write(primary)
-        folding = subprocess.Popen(["RNAfold", "--MEA", "-i", "--noPS",  str(rnafold_path.resolve())], stdout=subprocess.PIPE).communicate()[0]
+        folding = subprocess.Popen(["RNAfold", "--MEA", "-i",  str(rnafold_path.resolve())], stdout=subprocess.PIPE).communicate()[0]
         # print(folding.decode("utf-8").split('\n'))
         folding = folding.decode("utf-8").split('\n')[5].split()[0]  # 5 is MEA structure output, 0 is structure in DB notation
         rnafold_path.unlink()
@@ -161,12 +155,7 @@ def _fold_primary(primary, env_config):
         folding = subprocess.Popen(["./thirdparty/linearfold/LinearFold/linearfold", "-V"], stdin=echo_ps.stdout, stdout=subprocess.PIPE).communicate()[0].decode("utf-8").split()[1]
 
     elif env_config.algorithm == 'contrafold':
-        # now = datetime.now()
-        # now = now.strftime("%d/%m/%Y %H:%M:%S")
-        now = datetime.utcnow().strftime('%Y-%m-%d-%H-%M-%S-%f')
-        #now = '-'.join(now.split('/')).replace(' ', '-')
-
-        pathname = '_'.join([str(env_config.rna_id), now])+'_contrafold.fasta'
+        pathname = ''.join([str(env_config.desired_gc)])+'_contrafold.fasta'
         contrafold_path = Path(pathname)
         with open(contrafold_path, 'w+') as f:
             f.write('>current' + '\n')
@@ -335,7 +324,10 @@ class GcControler(object):
         self._design = design
         self._target = target
         self._gc_tolerance = gc_tolerance
-        self._desired_gc = float(self._target.gc)
+        if self._target.gc is None:
+            self._desired_gc = 0.5
+        else:
+            self._desired_gc = float(self._target.gc)
 
     def gc_content_primary(self, primary):
         return (primary.upper().count('G') + primary.upper().count('C')) / len(primary)
@@ -455,8 +447,7 @@ class GcControler(object):
             folding_tmp_1 = _fold_primary(''.join(primary_tmp_1), self._env_config)
 
             # check first if hamming distance is at least the same for tmp candidate 1 (we do not want to increase hamming distance)
-
-            if hamming_with_n(designed_structure=folding_tmp_1, target_structure=self._target.dot_bracket) <= hamming_distance:
+            if hamming_with_n(folding_tmp_1, self._target.dot_bracket) <= hamming_distance:
                 # if hamming is ok, check if gc content would be better (abs diff)
                 if self.gc_diff_abs_primary(''.join(primary_tmp_1)) < self.gc_diff_abs(self._design):
                     # if gc is better, asssign site to the design
@@ -464,8 +455,7 @@ class GcControler(object):
             else:
                 # do the same for candidate 2 if candidate 1 failed
                 folding_tmp_2 = _fold_primary(''.join(primary_tmp_1), self._env_config)
-
-                if hamming_with_n(designed_structure=folding_tmp_2, target_structure=self._target.dot_bracket) <= hamming_distance:
+                if hamming_with_n(folding_tmp_2, self._target.dot_bracket) <= hamming_distance:
                     if self.gc_diff_abs_primary(''.join(primary_tmp_2)) < self.gc_diff_abs(self._design):
                         self._design.assign_sites(3, site, self._target.get_paired_site(site))  # assign C/CG <=> action 3
 
@@ -490,8 +480,7 @@ class GcControler(object):
             folding_tmp_1 = _fold_primary(''.join(primary_tmp_1), self._env_config)
 
             # check first if hamming distance is at least the same for tmp candidate 1 (we do not want to increase hamming distance)
-
-            if hamming_with_n(designed_structure=folding_tmp_1, target_structure=self._target.dot_bracket) <= hamming_distance:
+            if hamming_with_n(folding_tmp_1, self._target.dot_bracket) <= hamming_distance:
                 # if hamming is ok, check if gc content would be better (abs diff)
                 if self.gc_diff_abs_primary(''.join(primary_tmp_1)) < self.gc_diff_abs(self._design):
                     # if gc is better, asssign site to the design
@@ -499,8 +488,7 @@ class GcControler(object):
             else:
             # do the same for candidate 2 if candidate 1 failed
                 folding_tmp_2 = _fold_primary(''.join(primary_tmp_1), self._env_config)
-
-                if hamming_with_n(designed_structure=folding_tmp_2, target_structure=self._target.dot_bracket) <= hamming_distance:
+                if hamming_with_n(folding_tmp_2, self._target.dot_bracket) <= hamming_distance:
                     if self.gc_diff_abs_primary(''.join(primary_tmp_2)) < self.gc_diff_abs(self._design):
                         self._design.assign_sites(2, site, self._target.get_paired_site(site))  # assign U/UA <=> action 2
 
@@ -1112,19 +1100,19 @@ def _sorted_data_gen(data):
             yield target
 
 
-# def hamming_with_n(s1, s2):
-#     distance = 0
-#     for c1, c2 in zip(s1, s2):
-#         if c1 != c2:
-#             if c1 == 'N' or c2 == 'N':
-#                 continue
-#             elif c1 == '|' and c2 in ['(', ')', '[', ']', '{', '}', '<', '>']:
-#                 continue
-#             elif c2 == '|' and c1 in ['(', ')', '[', ']', '{', '}', '<', '>']:
-#                 continue
-#             else:
-#                 distance += 1
-#     return distance
+def hamming_with_n(s1, s2):
+    distance = 0
+    for c1, c2 in zip(s1, s2):
+        if c1 != c2:
+            if c1 == 'N' or c2 == 'N':
+                continue
+            elif c1 == '|' and c2 in ['(', ')', '[', ']', '{', '}', '<', '>']:
+                continue
+            elif c2 == '|' and c1 in ['(', ')', '[', ']', '{', '}', '<', '>']:
+                continue
+            else:
+                distance += 1
+    return distance
 
 def change_encoding(structure):
     structure = ["(" if x == "(0" else x for x in structure]
@@ -1174,7 +1162,8 @@ class RnaDesignEnvironment(Environment):
         """
         self._env_config = env_config
 
-        targets = [_Target(dot_bracket, self._env_config) for dot_bracket in dot_brackets]
+        # targets = [_Target(dot_bracket, self._env_config) for dot_bracket in dot_brackets]
+        targets = [_Target((i, db, seq, gc, en), self._env_config) for i, db, seq, gc, en in dot_brackets]
         self._target_gen = _random_epoch_gen(targets)
         if self._env_config.data_type == 'random-sort':
             self._target_gen = _sorted_data_gen(targets)
@@ -1204,6 +1193,9 @@ class RnaDesignEnvironment(Environment):
         """
         self._env_config.interactions += 1
         self.target = next(self._target_gen)
+
+        if not self._env_config.control_gc:
+            self._env_config.control_gc = self.target.gc is not None
 
         # print(self.target.sequence_constraints)
 
@@ -1266,23 +1258,21 @@ class RnaDesignEnvironment(Environment):
         #
         sequence_parts, folding_parts = self.target.partition
 
-        # if self._env_config.reward_function == 'sequence_and_structure':
-        #     designed_sequence=None, designed_structure=None, target_sequence=None, target_structure=None
-        #     distance += hamming_with_n(design.primary, self.target.sequence_constraints)
-	    #TODO distance metric
-        # else:
-        design = [c for c in design._primary_list]
+        if self._env_config.reward_function == 'sequence_and_structure':
+            distance += hamming_with_n(design.primary, self.target.sequence_constraints)
+        else:
+            design = [c for c in design._primary_list]
 
-        for index, site in enumerate(self.target.local_target):
-            if site in ['A', 'C', 'G', 'U']:
-                design[index] = site
+            for index, site in enumerate(self.target.local_target):
+                if site in ['A', 'C', 'G', 'U']:
+                    design[index] = site
 
-        self.design = _Design(primary=[c for c in ''.join(design).rstrip()])
+            self.design = _Design(primary=[c for c in ''.join(design).rstrip()])
 
-        folding = _fold_primary(self.design.primary, self._env_config)
+            folding = _fold_primary(self.design.primary, self._env_config)
             # print(folding)
 
-        distance += self._env_config.distance_metric(designed_structure=folding, target_structure=self.target.dot_bracket)
+        distance += hamming_with_n(folding, self.target.dot_bracket)
 
         return distance, folding
 
@@ -1334,23 +1324,22 @@ class RnaDesignEnvironment(Environment):
                 # print(differing_sites)
         differing_sites = differing_copy
         # print(differing_sites)
-        distances = []
+        hamming_distances = []
         for mutation in product("AGCU", repeat=len(differing_sites)):
             mutated = self.design.get_mutated(mutation, differing_sites)
             if self._env_config.local_design:
-                distance, _ = self._get_local_design_loss(mutated)
+                hamming_distance, _ = self._get_local_design_loss(mutated)
             else:
                 folded_mutated = _fold_primary(mutated.primary, self._env_config)
-
-                distance = hamming_with_n(designed_structure=folded_mutated, target_structure=self.target.dot_bracket)
-            distances.append((distance, mutated))
-            if distance == 0:  # For better timing results
+                hamming_distance = hamming_with_n(folded_mutated, self.target.dot_bracket)
+            hamming_distances.append((hamming_distance, mutated))
+            if hamming_distance == 0:  # For better timing results
                 # print(f"in LIS {hamming_with_n(mutated.primary, self.target.sequence_constraints)}")
                 # print(_fold_primary(mutated.primary, self._env_config))
                 # print(mutated.primary)
                 # print(f"in LIS: {self._get_local_design_loss(mutated)}")
                 return (0, mutated)
-        return min(distances, key=lambda x: x[0])
+        return min(hamming_distances, key=lambda x: x[0])
 
     def reward_local_design(self):
 
@@ -1378,14 +1367,12 @@ class RnaDesignEnvironment(Environment):
                 # print('enter GC-control')
 
                 self.gc_controler = GcControler(self.design, self.target, self._env_config.gc_tolerance, self._env_config)
-                folding = _fold_primary(self.design.primary, self._env_config)
 
-                ham_dist = hamming_with_n(designed_structure=folding, target_structure=self.target.dot_bracket)
-                self.design = self.gc_controler.gc_improvement_step(hamming_distance=ham_dist)
+                self.design = self.gc_controler.gc_improvement_step(hamming_distance=distance)
 
                 self._folding = _fold_primary(self.design.primary, self._env_config)
 
-                distance = self._env_config.distance_metric(designed_structure=self._folding, target_structure=self.target.dot_bracket)
+                distance = hamming_with_n(self._folding, self.target.dot_bracket)
                 gc_diff_abs = self.gc_controler.gc_diff_abs(self.design)
 
                 if self.gc_controler.gc_satisfied(self.design):

@@ -93,15 +93,9 @@ We provide a version of *LEARNA* with tuned hyperparameters as described in our 
 An example input file might look as follows:
 
 ```
-> Test structure 1
+> Test structure
 ....((((....))))....
-> Test structure 2
-..((....))..
-> Test structure 3
-....((((....))))...............
 ```
-
-If multiple structures are provided with the input file, *LEARNA* will try to solve one structure after the other.
 
 The easiest way of running `LEARNA` from commandline is to simply type
 
@@ -145,7 +139,88 @@ could then look as follows
 
 **Note:** The last two predictions are sub-optimal with a Hamming distance of 6 each. The output is sorted by Hamming distance.
 
+To run LEARNA from a given file input type
+
+```
+$ learna --input_file learna_example_input.in --min_solutions 10000 --timeout 100000
+```
+This will run learna until it gathered 10000 solutions for the target defined in `learna_example_input.in`.
+
+**Note** that we set the timeout to 100000 seconds in order to ensure that all predictions will be provided correctly.
+The default timeout for all learna-based approaches is set to 600 seconds, which might be to small to find 10000 solutions, depending on the input.
+However, 100000 seconds is a very high threshold for comon usecases and serves just as an example here.
+
 
 ### Meta-LEARNA
 
+Meta-LEARNA is a version of the LEARNA algorithm that has meta-learned an RNA design policy across thousands of different RNA design tasks.
+The algorithm samples sequences from the learned policy without further parameter updates and, thus, allows to find solutions very quickly.
+The down-side of the Meta-LEARNA approach is that the learned policy might leverage certain short-cuts in the folding engine it was trained on (RNAfold).
+This means that the sequences might be biased towards predictions with G-C pairs.
+However, Meta-LEARNA is very useful to quickly provide solutions for a given input structure, however, typically with little sequence diversity.
+
+To run Meta-LEARNA instead of LEARNA, simply replace `learna` with `m̀eta-learna` in the previous calls.
+an example run of Meta-LEARNA then looks as follows:
+
+```
+$ meta-learna --input_file learna_example_input.in --min_solutions 10000 --timeout 100000
+```
+
+
+### Meta-LEARNA-Adapt
+
+The Meta-LEARNA-Adapt algorithm seeks to combine the best of both, learna and Meta-LEARNA.
+The algorithm samples sequences for a given input target structure from a learned policy. However, Meta-LEARNA-Adapt updates its parameters with every prediction such that it adapts to a given input target.
+
+To run Meta-LEARNA-Adapt, simply call
+
+```
+$ meta-learna-adapt --input_file learna_example_input.in --min_solutions 10000 --timeout 100000
+```
+
+**Nonte:** To increase the diversity of predictions, we provide the `--diversity_loss` option for all LEARNA-based algorithms.
+With this option, a loss is added to the general structural loss function that penalizes predictions of the same sequence multiple times.
+While we did not use this option during training, our adaptive approaches LEARNA and Meta-LEARNA-Adapt will be informed about the prediction diversity during inference.
+This option is particularly useful when running the algorithms to provide larger amounts of candidates for a given target, since both algorithms learn to solve the target better and better with every prediction. This sometimes results in predicting very similar sequences at late prediction stages.
+
+an example call including the diversity loss looks as follows.
+
+```
+$ meta-learna-adapt --input_file learna_example_input.in --min_solutions 10000 --timeout 100000 --diversity_loss
+```
+
+### libLEARNA
+
+libLEARNA is an algorithm that
+
+## Python Interfaces
+
+All our tools can also be run directly using python, or imported via `learna_tools`.
+We will now explain how to run the different tools using python and how to import the tools as modules in your research.
+
+### Run `learna_tools` via Python
+
+
+### Import `learna_tools` into an existing python script
+
+
+
+
+## Automated Reinforcement Learning
+
+LEARNA as well as libLEARNA are [automated reinforcement learning](https://jair.org/index.php/jair/article/view/13596/26808) algorithm that uses an efficient Bayesian Optimization method, [BOHB](https://proceedings.mlr.press/v80/falkner18a/falkner18a.pdf),
+to automatically find the best model for solving the RNA design problem. To learn more about automated machine learning, we refer to the [autoML website](https://www.automl.org/). For more about BOHB, see the [documentation](https://automl.github.io/HpBandSter/build/html/optimizers/bohb.html).
+
+We will continue with explaining how you can rerun the meta-optimization of the different `learna_tools`, or setup an own meta-optimization loop if needed for your research.
+
+### Configuration Space
+
+### Worker
+
+### Meta-Optimization
+
+
+```
+python -m bohb
+```
 

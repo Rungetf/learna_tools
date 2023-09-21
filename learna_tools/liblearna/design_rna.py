@@ -1,4 +1,11 @@
 import time
+import warnings
+warnings.filterwarnings('ignore')
+
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # '2'
+
+from tqdm import tqdm
 
 import tensorflow as tf
 from learna_tools.tensorforce.runner import Runner
@@ -15,8 +22,10 @@ from learna_tools.metrics.string_distance import (
 
 from learna_tools.metrics.graph_distance import weisfeiler_lehmann
 
+SOLUTIONS = []
+CANDIDATES = {}
 
-def _get_episode_finished(timeout, stop_once_solved):
+def _get_episode_finished(timeout, stop_once_solved, num_solutions, pbar):
     """
     Check for timeout after each episode of designing one entire target structure.
 
@@ -30,9 +39,10 @@ def _get_episode_finished(timeout, stop_once_solved):
     start_time = time.time()
 
     def episode_finished(runner):
-        plot = False
+        # plot = False
         env = runner.environment
 
+        target_id = env.episodes_info[-1].target_id
         candidate_solution = env.design.primary
         last_reward = runner.episode_rewards[-1]
         candidate_from_info = env.episodes_info[-1].candidate
@@ -50,23 +60,47 @@ def _get_episode_finished(timeout, stop_once_solved):
         # gc_satisfied = env.episodes_info[-1].gc_satisfied
         folding = env.episodes_info[-1].folding
         elapsed_time = time.time() - start_time
-        if plot:
-            if len(env.episodes_info) > 20000:
-                from matplotlib import pyplot as plt
-                plt.plot([i for i, _ in enumerate(env.episodes_info, 1)], [e.agent_gc for e in env.episodes_info], color='blue', linewidth=1)
-                plt.plot([i for i, _ in enumerate(env.episodes_info, 1)], [e.gc_content for e in env.episodes_info], color='green', linewidth=1)
-                plt.plot([i for i, _ in enumerate(env.episodes_info, 1)], [e.desired_gc for e in env.episodes_info], color='red', linewidth=1)
-                plt.show()
+        if last_reward == 1.0:
+            try:
+                CANDIDATES[candidate_solution] = True
+                SOLUTIONS.append({'Id': target_id,
+                                  'time': elapsed_time,
+                                  # 'hamming_distance': hamming_distance,
+                                  # 'rel_hamming_distance': last_fractional_hamming,
+                                  'sequence': candidate_from_info,
+                                  'structure': folding,
+                                  'GC-content': gc_content,
+                                  })
+                pbar.update(1)
+            except KeyError as e:
+                pass
+
+            #candidates.append(candidate_solution)
+            # SOLUTIONS.append({'Id': target_id,
+            #                   'time': elapsed_time,
+            #                   'length': len(candidate_solution),
+            #                   'GC-content': gc_content,
+            #                   'sequence': candidate_solution,
+            #                   'structure': folding,
+            #                   })
+            # pbar.update(1)
+        # if plot:
+        #     if len(env.episodes_info) > 20000:
+        #         from matplotlib import pyplot as plt
+        #         plt.plot([i for i, _ in enumerate(env.episodes_info, 1)], [e.agent_gc for e in env.episodes_info], color='blue', linewidth=1)
+        #         plt.plot([i for i, _ in enumerate(env.episodes_info, 1)], [e.gc_content for e in env.episodes_info], color='green', linewidth=1)
+        #         plt.plot([i for i, _ in enumerate(env.episodes_info, 1)], [e.desired_gc for e in env.episodes_info], color='red', linewidth=1)
+        #         plt.show()
         # print(elapsed_time, last_reward, last_fractional_hamming, gc_satisfied, last_gc_content, agent_gc, candidate_solution)
         # if last_reward == 1.0:
         # folding = fold(candidate_solution)[0]
-        print(steps, elapsed_time, last_reward, len(candidate_solution), folding, candidate_solution, target, delta_gc, gc_satisfied, desired_gc, agent_gc, gc_content)
+        # print(steps, elapsed_time, last_reward, len(candidate_solution), folding, candidate_solution, target, delta_gc, gc_satisfied, desired_gc, agent_gc, gc_content)
             # print(elapsed_time, last_reward, len(candidate_solution), folding, candidate_from_info)
 
         no_timeout = not timeout or elapsed_time < timeout
         # no_timeout = not timeout or counter < timeout
         stop_since_solved = stop_once_solved and last_reward == 1.0
-        keep_running = not stop_since_solved and no_timeout
+        keep_running = not stop_since_solved and no_timeout and len(SOLUTIONS) < num_solutions
         # keep_running = steps < timeout
         return keep_running
 
@@ -89,6 +123,7 @@ def design_rna(
     network_config,
     agent_config,
     env_config,
+    num_solutions,
 ):
     """
     Main function for RNA design. Instantiate an environment and an agent to run in a
@@ -118,6 +153,8 @@ def design_rna(
     env_config.use_embedding = bool(network_config.embedding_size)
     environment = RnaDesignEnvironment(dot_brackets, env_config)
 
+    pbar = tqdm(total=num_solutions)
+
     network = get_network(network_config)
     # Runner restarts the agent by calling get_agent again
     get_agent = get_agent_fn(
@@ -129,15 +166,15 @@ def design_rna(
     )
     runner = Runner(get_agent, environment)
 
-    stop_once_solved = len(dot_brackets) == 1
-    # stop_once_solved = False
+    # stop_once_solved = len(dot_brackets) == 1
+    stop_once_solved = False
     runner.run(
         deterministic=False,
         restart_timeout=restart_timeout,
         stop_learning=stop_learning,
-        episode_finished=_get_episode_finished(timeout, stop_once_solved),
+        episode_finished=_get_episode_finished(timeout, stop_once_solved, num_solutions, pbar),
     )
-    return environment.episodes_info
+    return SOLUTIONS
 
 
 if __name__ == "__main__":
@@ -238,6 +275,7 @@ if __name__ == "__main__":
     parser.add_argument("--rna_id", type=str, default='1', help="provide the rna id for writing files s.g. for contrafold")
     parser.add_argument("--distance_metric", type=str, default='hamming', help="Choose a distance metric. Available: hamming, levenshtein, wl")
     # parser.add_argument("--structure_only", action="store_true", help="Choose if state only considers structure parts of the target")
+    parser.add_argument("--min_solutions", type=int, default=1, help="Number of optimal solutions")
 
 
     args = parser.parse_args()
@@ -317,4 +355,5 @@ if __name__ == "__main__":
         network_config=network_config,
         agent_config=agent_config,
         env_config=env_config,
+        num_solutions=args.min_solutions,
     )

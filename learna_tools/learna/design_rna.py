@@ -5,6 +5,8 @@ warnings.filterwarnings('ignore')
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # '2'
 
+from tqdm import tqdm
+
 import tensorflow as tf
 from learna_tools.tensorforce.runner import Runner
 
@@ -12,11 +14,10 @@ from learna_tools.learna.agent import NetworkConfig, get_network, AgentConfig, g
 from learna_tools.learna.environment import RnaDesignEnvironment, RnaDesignEnvironmentConfig
 
 SOLUTIONS = []
-PREDICTIONS = []
-candidates = []
+CANDIDATES = {}
 
 
-def _get_episode_finished(timeout, stop_once_solved, num_solutions):
+def _get_episode_finished(timeout, stop_once_solved, num_solutions, hamming_tolerance, pbar):
     """
     Check for timeout after each episode of designing one entire target structure.
 
@@ -38,22 +39,27 @@ def _get_episode_finished(timeout, stop_once_solved, num_solutions):
         elapsed_time = time.time() - start_time
         hamming_distance = env.episodes_info[-1].hamming_distance
         structure = env.episodes_info[-1].structure
-        PREDICTIONS.append({'Id': target_id,
-                            'time': elapsed_time,
-                            'hamming_distance': hamming_distance,
-                            'rel_hamming_distance': last_fractional_hamming,
-                            'sequence': candidate_solution,
-                            'structure': structure,
-                            })
-        if last_reward == 1.0 and candidate_solution not in candidates:
-            candidates.append(candidate_solution)
-            SOLUTIONS.append({'Id': target_id,
-                              'time': elapsed_time,
-                              'hamming_distance': hamming_distance,
-                              'rel_hamming_distance': last_fractional_hamming,
-                              'sequence': candidate_solution,
-                              'structure': structure,
-                              })
+        # PREDICTIONS.append({'Id': target_id,
+        #                     'time': elapsed_time,
+        #                     'hamming_distance': hamming_distance,
+        #                     'rel_hamming_distance': last_fractional_hamming,
+        #                     'sequence': candidate_solution,
+        #                     'structure': structure,
+        #                     })
+        if last_reward == 1.0 or hamming_distance <= hamming_tolerance:
+            try:
+                CANDIDATES[candidate_solution] = True
+                SOLUTIONS.append({'Id': target_id,
+                                  'time': elapsed_time,
+                                  'hamming_distance': hamming_distance,
+                                  'rel_hamming_distance': last_fractional_hamming,
+                                  'sequence': candidate_solution,
+                                  'structure': structure,
+                                  })
+                pbar.update(1)
+            except KeyError as e:
+                pass
+
         # print(elapsed_time, last_reward, last_fractional_hamming, candidate_solution)
 
         no_timeout = not timeout or elapsed_time < timeout
@@ -74,6 +80,7 @@ def design_rna(
     agent_config,
     env_config,
     num_solutions,
+    hamming_tolerance=0,
 ):
     """
     Main function for RNA design. Instantiate an environment and an agent to run in a
@@ -103,6 +110,8 @@ def design_rna(
     env_config.use_embedding = bool(network_config.embedding_size)
     environment = RnaDesignEnvironment(dot_brackets, env_config)
 
+    pbar = tqdm(total=num_solutions)
+
     network = get_network(network_config)
     # Runner restarts the agent by calling get_agent again
     get_agent = get_agent_fn(
@@ -120,9 +129,13 @@ def design_rna(
         deterministic=False,
         restart_timeout=restart_timeout,
         stop_learning=stop_learning,
-        episode_finished=_get_episode_finished(timeout, stop_once_solved, num_solutions),
+        episode_finished=_get_episode_finished(timeout,
+                                               stop_once_solved,
+                                               num_solutions,
+                                               hamming_tolerance,
+                                               pbar),
     )
-    return PREDICTIONS, SOLUTIONS
+    return SOLUTIONS
 
 
 if __name__ == "__main__":
@@ -191,7 +204,7 @@ if __name__ == "__main__":
     parser.add_argument("--num_lstm_layers", type=int, help="The number of lstm layers")
     parser.add_argument("--embedding_size", type=int, help="The size of the embedding")
 
-    parser.add_argument("--min_solutions", type=int, default=1, help="The number of lstm units")
+    parser.add_argument("--min_solutions", type=int, default=1, help="Number of optimal solutions")
 
     args = parser.parse_args()
 
@@ -232,4 +245,5 @@ if __name__ == "__main__":
         agent_config=agent_config,
         env_config=env_config,
         num_solutions=args.min_solutions,
+        hamming_tolerance=0,
     )

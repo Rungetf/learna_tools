@@ -36,6 +36,9 @@ setup(
         "scikit-learn",
         "LinearFold",
         "tabulate",
+        "matplotlib",
+        "biopython",
+        "logomaker",
     ],
     classifiers=[
         "Programming Language :: Python :: 3.6",

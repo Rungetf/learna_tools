@@ -60,6 +60,7 @@ def read_task_description(path):
             tasks.append(task)
 
     data = pd.DataFrame(tasks)
+
     return data
 
 
