@@ -61,6 +61,25 @@ or from the PyPi package
 pip install learna_tools
 ```
 
+### CM design with libLEARNA
+To run the CM design with libLEARNA, you need to install Infernal:
+```
+conda install -c bioconda infernal
+```
+
+You can use the latest Rfam database CMs as follows
+
+```
+mkdir rfam_cms
+```
+no go to the directory
+```
+cd rfam_cms
+```
+and download Rfam CMs
+```
+wget https://ftp.ebi.ac.uk/pub/databases/Rfam/CURRENT/Rfam.cm.gz
+```
 
 ## Usage
 
