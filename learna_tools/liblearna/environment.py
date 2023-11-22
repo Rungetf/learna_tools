@@ -63,6 +63,10 @@ class RnaDesignEnvironmentConfig:
     folding_counter: int = 0
     interactions: int = 0
     seed: int = 42  # 1  # 123 # 0  # 137  # 42
+    cm_design: bool = False
+    cm_name: str = 'RF00008'
+    cm_path: str = 'rfam_cms/Rfam.cm'
+    working_dir: str = 'working_dir'
 
 
 
@@ -1328,13 +1332,13 @@ class RnaDesignEnvironment(Environment):
         self.episodes_info = []
 
         # try CM hitting as task
-        self.cm_design = True
+        self.cm_design = env_config.cm_design
         if self.cm_design:
-            self.working_dir = 'working_dir'
+            self.working_dir = env_config.working_dir
             self.max_e = 100
             Path(self.working_dir).mkdir(parents=True, exist_ok=True)
-            self.cm_name = 'RF00008'  # 'RF00651'  # 'RF00162'  # SAM riboswitch; LEN 108, MaxL 270;  RF00651 -> mir-221 CLEN 85
-            self.cm_db = '/home/fred/current_projects/github/learna_tools/rfam_cms/Rfam.cm'
+            self.cm_name = env_config.cm_name  # 'RF00651'  # 'RF00162'  # SAM riboswitch; LEN 108, MaxL 270;  RF00651 -> mir-221 CLEN 85
+            self.cm_db = env_config.cm_path
             self.infernal = Infernal(working_dir=self.working_dir,
                         E=self.max_e,
                         incE=self.max_e)

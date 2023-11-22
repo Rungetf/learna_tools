@@ -122,9 +122,11 @@ parser.add_argument("--show_plots", action="store_true", help="Show each plot ge
 parser.add_argument("--resolution", type=str, default='8.0', help="Resolution for structure plots")
 parser.add_argument("--plot_logo", action="store_true", help="Plot sequence information as logo")
 parser.add_argument("--show_logo", action="store_true", help="Plot sequence information as logo")
-
-
-
+parser.add_argument("--working_dir", type=str, default='working_dir', help="the working_dir")
+parser.add_argument("--cm_design", action="store_true", help="Activate CM design")
+parser.add_argument("--cm_path", type=str, default='rfam_cms/Rfam.cm', help="path to the CM database")
+parser.add_argument("--cm_name", type=str, default='RF00008', help="Specific cm to design for")
+parser.add_argument("--seed", type=int, default=42, help="Seed for task sampling")
 
 args = parser.parse_args()
 
@@ -173,6 +175,11 @@ env_config = RnaDesignEnvironmentConfig(
     desired_gc=args.desired_gc,
     algorithm=args.algorithm,
     gc_tolerance=args.gc_tolerance,
+    cm_design=args.cm_design,
+    cm_path=args.cm_path,
+    cm_name=args.cm_name,
+    working_dir=args.working_dir,
+    seed=args.seed,
     # rna_id='1',
     # structure_only=args.structure_only,
     # training_data=args.training_data,

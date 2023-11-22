@@ -1,0 +1,19 @@
+#! /bin/bash
+#MSUB -N eval_learna_tools_cm_design  # name
+#MSUB -E                   # don't remember what this was, maybe you find it out... :-D
+#MSUB -e logs/${MOAB_JOBID}.e  # directory has to exist
+#MSUB -o logs/${MOAB_JOBID}.o  # directoryy has to exist
+
+#MSUB -l walltime=2:00:00:00  # wall-time max is 4 days
+#MSUB -l pmem=5gb  # memory (don't make it larger than 5-6, jobs won't start otherwise; if you need more, take more cores on one node.)
+
+#MSUB -l nodes=1:ppn=1
+
+source /home/fr/fr_fr/fr_tr1040/miniconda3/bin/activate learna_tools
+
+cd learna_tools
+
+INPUTFILE=/home/fr/fr_fr/fr_tr1040/learna_tools/cm_design_RF00008_significant_bp_no_nucs.fa 
+# SEED=0
+
+liblearna --input_file $INPUTFILE --min_length 50 --max_length 60
