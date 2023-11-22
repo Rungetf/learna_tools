@@ -198,6 +198,7 @@ dot_brackets = list((i, db, seq, gc, en) for i, db, seq, gc, en in zip(data['Id'
                                                                        data['globgc'],
                                                                        data['globen']))
 
+
 # print(dot_brackets)
 
 # print(env_config.control_gc)

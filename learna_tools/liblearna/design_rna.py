@@ -5,6 +5,9 @@ warnings.filterwarnings('ignore')
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # '2'
 
+import numpy as np
+from collections import Counter
+
 from tqdm import tqdm
 
 import tensorflow as tf
@@ -25,7 +28,7 @@ from learna_tools.metrics.graph_distance import weisfeiler_lehmann
 SOLUTIONS = []
 CANDIDATES = {}
 
-def _get_episode_finished(timeout, stop_once_solved, num_solutions, pbar):
+def _get_episode_finished(timeout, stop_once_solved, num_solutions, pbar, cm_design=True):
     """
     Check for timeout after each episode of designing one entire target structure.
 
@@ -60,6 +63,18 @@ def _get_episode_finished(timeout, stop_once_solved, num_solutions, pbar):
         # gc_satisfied = env.episodes_info[-1].gc_satisfied
         folding = env.episodes_info[-1].folding
         elapsed_time = time.time() - start_time
+
+        if cm_design:
+            # if len(runner.episode_rewards) % 100 == 0:
+            max_steps = 30000
+            print(len(runner.episode_rewards), elapsed_time, runner.episode_rewards[-1], candidate_solution, target)
+            if len(runner.episode_rewards) >= max_steps:
+                return False
+                # print('Elapsed Time:', elapsed_time)
+                # print('Number of Episodes:', len(runner.episode_rewards))
+                # print('Mean reward last 100 Episodes:', np.mean(runner.episode_rewards[-100:]))
+                # print('Any reward larger zero:', any([r > 0 for r in runner.episode_rewards[-100:]]))
+                # print('Number of Hits:', Counter(runner.episode_rewards[-100:]))
         if last_reward == 1.0:
             try:
                 CANDIDATES[candidate_solution] = True

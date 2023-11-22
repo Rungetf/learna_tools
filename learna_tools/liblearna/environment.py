@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from distance import hamming
 from io import StringIO
 from pathlib import Path
+from Bio import AlignIO
 
 from tensorforce.environments import Environment
 from RNA import fold
@@ -1147,6 +1148,159 @@ class EpisodeInfo:
     interactions: int
     target: int
 
+def stockholm2records(sto_file):
+    align = AlignIO.read(sto_file, "stockholm")
+    return align
+
+
+def stockholm2df(sto_file):
+    align = stockholm2records(sto_file)
+    d_list = [{'Id': r.name, 'sequence': r.seq} for r in align]
+    return pd.DataFrame(d_list)
+
+def stockholm2idlist(sto_file):
+    align = stockholm2records(sto_file)
+    print(align)
+    return [r.name for r in align]
+
+def read_e_values(tab_file):
+    with open(tab_file) as f:
+        lines = f.readlines()
+    header = [x.strip().replace('#', '') for x in (lines[0].split('\t'))]
+    data = []
+    for line in lines[1:]:
+        line = line.strip()
+        if line.startswith('# Program:'):
+            continue
+        elif line.startswith('# Version:'):
+            continue
+        elif line.startswith('# Pipeline mode:'):
+            continue
+        elif line.startswith('# Query file:'):
+            continue
+        elif line.startswith('# Target file:'):
+            continue
+        elif line.startswith('# Option settings:'):
+            continue
+        elif line.startswith('# Current dir:'):
+            continue
+        elif line.startswith('# Date:'):
+            continue
+        elif line.startswith('# [ok]'):
+            continue
+        elif line.startswith('#----'):
+            continue
+        else:
+            line_list = [x.replace('#', '') for x in line.split()]
+            if line_list and line_list[0] != '':
+                data.append(line_list)
+    # print(data)
+    # print(header)
+    if data:
+        df = pd.DataFrame(data, columns=['target name', 'accession', 'query name', 'accession', 'mdl', 'mdl from', 'mdl to', 'seq from', 'seq to', 'strand', 'trunc', 'pass', 'gc', 'bias', 'score', 'E-value', 'inc', 'description of target'])
+        return df
+    else:
+        return pd.DataFrame(columns=['target name', 'accession', 'query name', 'accession', 'mdl', 'mdl from', 'mdl to', 'seq from', 'seq to', 'strand', 'trunc', 'pass', 'gc', 'bias', 'score', 'E-value', 'inc', 'description of target'])
+
+
+class Infernal():
+    def __init__(self,
+                 working_dir: str = 'working_dir',
+                 E: float = 0.001,
+                 incE: float = 0.001,
+                 aln_outfile = 'infernal.tab',
+                 ):
+        self.working_dir = str(Path(working_dir).resolve())
+        self.aln = str(Path(working_dir, aln_outfile).resolve())
+        self.E = E
+        self.incE = incE
+        # print(self.E, self.incE)
+
+    def search_database(self,
+                        cm_database: str,
+                        identifier: str,
+                        fasta_db: str,
+                        ) -> list:
+
+        call1 = ["echo", str(identifier)]
+        call2 = ["cmfetch", "-f", f"{cm_database}", "-"]
+        call3 = ["cmsearch", "--tblout", f"{self.aln}", "--nohmmonly", "-E", f"{self.E}", "-", f"{fasta_db}"]  # "-A", f"{self.aln}", "--incE", f"{self.incE}",  "-T", "30.00", "-Z", "742849.287494",
+
+        ps1 = subprocess.Popen(call1, stdout=subprocess.PIPE)
+        ps2 = subprocess.Popen(call2, stdin=ps1.stdout, stdout=subprocess.PIPE)
+        subprocess.run(call3, stdin=ps2.stdout, stdout=subprocess.DEVNULL)
+
+        # hit_ids = stockholm2idlist(self.aln)
+        hits = read_e_values(self.aln)
+
+        return hits
+
+    def get_family_information(self,
+                               queries_fasta_path : str,
+                               cm_path : str,
+                               clanin_path : str,
+                               outpath : str,
+                               ):
+        # subprocess.call(["cmpress", cm_path])
+        subprocess.call(["cmscan", "--rfam", "--cut_ga", "--nohmmonly", "--oskip", "--tblout", outpath, "--fmt", "2", "--clanin", clanin_path, cm_path, queries_fasta_path])
+
+
+
+    def search(self, cm_path: str, fasta_path: str, outfile: str = None):
+        if outfile:
+            subprocess.call(["cmsearch", "-A", f"{outfile}", "-E", f"{self.E}", "--incE", f"{self.incE}", cm_path, fasta_path])
+            try:
+                hit_ids = stockholm2idlist(outfile)
+            except ValueError as e:
+                print('Note:', 'No hits satisfy inclusion thresholds; no alignment saved')
+                hit_ids = []
+            except FileNotFoundError as e:
+                print('Note:', 'no alignment file found')
+                hit_ids = []
+        else:
+            subprocess.call(["cmsearch", "-A", f"{self.aln}", "-E", f"{self.E}", "--incE", f"{self.incE}", cm_path, fasta_path])
+            try:
+                hit_ids = stockholm2idlist(self.aln)
+            except ValueError as e:
+                print('Note:', 'No hits satisfy inclusion thresholds; no alignment saved')
+                hit_ids = []
+            except FileNotFoundError as e:
+                print('Note:', 'no alignment file found')
+                hit_ids = []
+
+        return hit_ids
+
+    def build_noss(self, stk_path: str, out_stem: str, name: str = '', cm_dir: str = ''):
+        if not cm_dir:
+            if not name:
+                subprocess.call(["cmbuild", "--noss", f"{self.working_dir}/{out_stem}.cm", stk_path])
+            else:
+                subprocess.call(["cmbuild", "--noss", "-F", "-n", name, f"{self.working_dir}/{out_stem}.cm", stk_path])
+        else:
+            if not name:
+                subprocess.call(["cmbuild", "--noss", f"{cm_dir}/{out_stem}.cm", stk_path])
+            else:
+                subprocess.call(["cmbuild", "--noss", "-F", "-n", name, f"{cm_dir}/{out_stem}.cm", stk_path])
+
+    def build(self, stk_path: str, out_stem: str, name: str = '', cm_dir: str = ''):
+        if not cm_dir:
+            if not name:
+                subprocess.call(["cmbuild", "-F", f"{self.working_dir}/{out_stem}.cm", stk_path])
+            else:
+                subprocess.call(["cmbuild", "-F", "-n", name, f"{self.working_dir}/{out_stem}.cm", stk_path])
+        else:
+            if not name:
+                subprocess.call(["cmbuild", "-F", f"{cm_dir}/{out_stem}.cm", stk_path])
+            else:
+                subprocess.call(["cmbuild", "-F", "-n", name, f"{cm_dir}/{out_stem}.cm", stk_path])
+
+
+    def calibrate(self, cm_path: str):
+        subprocess.call(["cmcalibrate", cm_path])
+
+    def sample_msa(self, cm_path : str, outpath : str, n : int = 1000, seed : int = 42):
+        subprocess.call(["cmemit", "-o", outpath, "-a", "-N", str(n), "--seed", str(seed), cm_path])
+
 
 class RnaDesignEnvironment(Environment):
     """
@@ -1172,6 +1326,18 @@ class RnaDesignEnvironment(Environment):
         self.design = None
         self._folding = None
         self.episodes_info = []
+
+        # try CM hitting as task
+        self.cm_design = True
+        if self.cm_design:
+            self.working_dir = 'working_dir'
+            self.max_e = 100
+            Path(self.working_dir).mkdir(parents=True, exist_ok=True)
+            self.cm_name = 'RF00008'  # 'RF00651'  # 'RF00162'  # SAM riboswitch; LEN 108, MaxL 270;  RF00651 -> mir-221 CLEN 85
+            self.cm_db = '/home/fred/current_projects/github/learna_tools/rfam_cms/Rfam.cm'
+            self.infernal = Infernal(working_dir=self.working_dir,
+                        E=self.max_e,
+                        incE=self.max_e)
 
         self.alpha = 1.0
         self.beta = 1.0
@@ -1224,9 +1390,11 @@ class RnaDesignEnvironment(Environment):
         Args:
             action: The action chosen by the agent.
         """
+        # print(action)
         current_site = self.design.first_unassigned_site if not self._env_config.reward_function == 'structure_only' else self.target.current_site
         paired_site = self.target.get_paired_site(current_site) if self._env_config.predict_pairs else None  # None for unpaired sites
         self.design.assign_sites(action, current_site, paired_site, self._env_config.predict_pairs)
+        # print(self.design.primary)
 
     def _get_state(self):
         """
@@ -1479,7 +1647,73 @@ class RnaDesignEnvironment(Environment):
 
             return (1 - (general_distance)) ** self._env_config.reward_exponent
 
+    def _reward_cm_design(self):
+        # print(''.join(self.design.primary))
+        # print(self.target.sequence_constraints)
+        # print(self.target.dot_bracket)
+        # print(self.design.primary)
 
+        self.design._primary_list = [x if x is not None else y for x, y in zip(self.design._primary_list, self.target.sequence_constraints)]
+        fasta_path = Path(self.working_dir, 'tmp.fasta')
+
+        with open(f"{fasta_path.resolve()}", 'w') as f:
+            f.write(f">{self.target.id}\n{''.join(self.design.primary)}")
+        
+        try:
+            hit_df = self.infernal.search_database(cm_database=self.cm_db, identifier=self.cm_name, fasta_db=str(fasta_path.resolve()))
+        except ValueError as e:
+            print(e)
+        except Exception as e:
+            print(e)
+        # print(hit_df)
+        # hit_df = list(set(hit_df))
+        if hit_df.empty:
+            reward = -200
+        else:
+            hit_df.loc[:, 'score'] = hit_df['score'].astype(float)
+            reward = hit_df['score'].max()
+        # else:
+        #     hit_df.loc[:, 'E-value'] = hit_df['E-value'].astype(float)
+        #     
+        #     if hit_df['E-value'].min() > self.max_e:
+        #         reward = 0
+        #     elif 1 < hit_df['E-value'].min() < self.max_e:
+        #         reward = self.max_e - hit_df['E-value'].min()
+        #         if reward <0:
+        #             print(hit_df)
+        #             print(hit_df['E-value'].min(), reward)
+        #     else:
+        #         reward = # ((1 - hit_df['E-value'].max()) ** 9) * self.max_e * 10
+        #         # if reward <0:
+        #         #     print(reward)
+        #         #     print(hit_df)
+        #         #     print(hit_df['E-value'].min(), reward)
+        #     # print(hit_df['E-value'].min(), reward, ''.join(self.design.primary))
+        # reward = max(0, reward)
+
+        fasta_path.unlink()
+
+        episode_info = EpisodeInfo(
+            target_id=self.target.id,
+            time=time.time(),
+            normalized_hamming_distance=reward,
+            folding=None,
+            folding_counter=1,
+            candidate=self.design.primary,
+            agent_gc=None,
+            desired_gc=None,
+            gc_content=None,
+            delta_gc=None,
+            gc_satisfied=None,
+            interactions=None,
+            target=self.target.dot_bracket,
+            )
+        self.episodes_info.append(episode_info)
+
+        return reward
+
+        
+        
 
     def _get_reward(self, terminal):
         """
@@ -1493,6 +1727,9 @@ class RnaDesignEnvironment(Environment):
         """
         if not terminal:
             return 0
+
+        if self.cm_design:
+            return self._reward_cm_design()
 
 
         # reward formulation for RNA local Design, excluding local improvement steps and gc content!!!!
