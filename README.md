@@ -80,6 +80,14 @@ and download Rfam CMs
 ```
 wget https://ftp.ebi.ac.uk/pub/databases/Rfam/CURRENT/Rfam.cm.gz
 ```
+You can unzip the files with
+```
+gunzip Rfam.cm.gz
+```
+Then run
+```
+cmpress Rfam.cm
+```
 
 ## Usage
 
