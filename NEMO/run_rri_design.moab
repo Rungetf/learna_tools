@@ -1,0 +1,23 @@
+#! /bin/bash
+#MSUB -N eval_learna_tools_rri_design  # name
+#MSUB -E                   # don't remember what this was, maybe you find it out... :-D
+#MSUB -e logs/${MOAB_JOBID}.e  # directory has to exist
+#MSUB -o logs/${MOAB_JOBID}.o  # directoryy has to exist
+
+#MSUB -l walltime=2:00:00:00  # wall-time max is 4 days
+#MSUB -l pmem=5gb  # memory (don't make it larger than 5-6, jobs won't start otherwise; if you need more, take more cores on one node.)
+
+#MSUB -l nodes=1:ppn=1
+#MSUB -t [42, 137, 1, 123, 0]
+
+
+INPUTFILE=/home/fr/fr_fr/fr_tr1040/learna_tools/rri_design.input
+
+# SEED=0
+
+source /home/fr/fr_fr/fr_tr1040/miniconda3/bin/activate learna_tools
+
+cd learna_tools
+
+
+liblearna --input_file $INPUTFILE --max_length 70 --seed ${MOAB_JOBARRAYINDEX} --rri_design --rri_target UUUAAAUUAAAAAAUCAUAGAAAAAGUAUCGUUUGAUACUUGUGAUUAUACUCAGUUAUACAGUAUCUUAAGGUGUUAUUAAUAGUGGUGAGGAGAAUUUAUGAAGCUUUUCAAAAGCUUGCUUGUGGCACCUGCAACUCUUGGUCUUUUAGCACCAAUGACCGCUACUGCUAAU
