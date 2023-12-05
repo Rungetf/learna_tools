@@ -67,6 +67,8 @@ class RnaDesignEnvironmentConfig:
     cm_name: str = 'RF00008'
     cm_path: str = 'rfam_cms/Rfam.cm'
     working_dir: str = 'working_dir'
+    rri_design: bool = False
+    rri_target: str = 'UUUAAAUUAAAAAAUCAUAGAAAAAGUAUCGUUUGAUACUUGUGAUUAUACUCAGUUAUACAGUAUCUUAAGGUGUUAUUAAUAGUGGUGAGGAGAAUUUAUGAAGCUUUUCAAAAGCUUGCUUGUGGCACCUGCAACUCUUGGUCUUUUAGCACCAAUGACCGCUACUGCUAAU'  # mRNA1 of intarna example
 
 
 
@@ -128,7 +130,6 @@ tuple_encoding = {
 def _fold_primary(primary, env_config):
     # increment folding counter
     env_config.folding_counter += 1
-    # print(env_config.folding_counter)
     # fold with rnafold
     if env_config.algorithm == 'rnafold':
         folding = fold(primary)[0]
@@ -139,7 +140,6 @@ def _fold_primary(primary, env_config):
             f.write('>current' + '\n')
             f.write(primary)
         folding = subprocess.Popen(["RNAfold", "--MEA", "-i",  str(rnafold_path.resolve())], stdout=subprocess.PIPE).communicate()[0]
-        # print(folding.decode("utf-8").split('\n'))
         folding = folding.decode("utf-8").split('\n')[5].split()[0]  # 5 is MEA structure output, 0 is structure in DB notation
         rnafold_path.unlink()
     # fold with e2efold
@@ -154,7 +154,6 @@ def _fold_primary(primary, env_config):
     elif env_config.algorithm == 'linearfold':
         echo_ps = subprocess.Popen(['echo', f"{primary}"], stdout=subprocess.PIPE)
         folding = subprocess.Popen(["./thirdparty/linearfold/LinearFold/linearfold"], stdin=echo_ps.stdout, stdout=subprocess.PIPE).communicate()[0].decode("utf-8").split()[1]
-        # print(folding)
     elif env_config.algorithm == 'linearfoldV':
         echo_ps = subprocess.Popen(['echo', f"{primary}"], stdout=subprocess.PIPE)
         folding = subprocess.Popen(["./thirdparty/linearfold/LinearFold/linearfold", "-V"], stdin=echo_ps.stdout, stdout=subprocess.PIPE).communicate()[0].decode("utf-8").split()[1]
@@ -626,12 +625,8 @@ class _Target(object):
 
             if env_config.reward_function == 'structure_only':
                 self.structure_parts_encoding = _encode_structure_parts(self.local_target)
-        # print(self.sequence_constraints)
-        # print(self.dot_bracket)
-        # print(self.local_target)
-        # print(self.partition)
-        # print(self.structure_parts_encoding)
-        # print(self._pairing_encoding)
+
+        
     def sequence_contains_iupac(self):
         iupac = {
             'R': ['A', 'G'],
@@ -660,7 +655,7 @@ class _Target(object):
         else:
             p_GC = 0.5
             p_AU = 0.5
-        # print(p_GC, p_GC / 2)
+        
 
         iupac = {
             'R': [['A', 'G'], [p_AU, p_GC]],
@@ -1059,7 +1054,9 @@ class _Design(object):
             site: The site to which the nucleotide is assigned to.
             paired_site: defines if the site has a corresponding pairing partner or not.
         """
+        
         self._current_site += 1
+        
         if predict_pairs and paired_site:
             base_current, base_paired = self.action_to_pair[action]
             self._primary_list[site] = base_current
@@ -1068,6 +1065,8 @@ class _Design(object):
         else:
             self._primary_list[site] = self.action_to_base[action]
             self._last_assignment = (site, self.action_to_base[action], False)
+
+
 
     @property
     def last_assignment(self):
@@ -1164,7 +1163,6 @@ def stockholm2df(sto_file):
 
 def stockholm2idlist(sto_file):
     align = stockholm2records(sto_file)
-    print(align)
     return [r.name for r in align]
 
 def read_e_values(tab_file):
@@ -1322,6 +1320,7 @@ class RnaDesignEnvironment(Environment):
 
         # targets = [_Target(dot_bracket, self._env_config) for dot_bracket in dot_brackets]
         targets = [_Target((i, db, seq, gc, en), self._env_config) for i, db, seq, gc, en in dot_brackets]
+        # print(targets)
         self._target_gen = _random_epoch_gen(targets)
         if self._env_config.data_type == 'random-sort':
             self._target_gen = _sorted_data_gen(targets)
@@ -1342,6 +1341,10 @@ class RnaDesignEnvironment(Environment):
             self.infernal = Infernal(working_dir=self.working_dir,
                         E=self.max_e,
                         incE=self.max_e)
+        
+        self.rri_design = env_config.rri_design
+        if self.rri_design:
+            self.rri_target = env_config.rri_target
 
         self.alpha = 1.0
         self.beta = 1.0
@@ -1394,11 +1397,9 @@ class RnaDesignEnvironment(Environment):
         Args:
             action: The action chosen by the agent.
         """
-        # print(action)
         current_site = self.design.first_unassigned_site if not self._env_config.reward_function == 'structure_only' else self.target.current_site
         paired_site = self.target.get_paired_site(current_site) if self._env_config.predict_pairs else None  # None for unpaired sites
         self.design.assign_sites(action, current_site, paired_site, self._env_config.predict_pairs)
-        # print(self.design.primary)
 
     def _get_state(self):
         """
@@ -1652,49 +1653,26 @@ class RnaDesignEnvironment(Environment):
             return (1 - (general_distance)) ** self._env_config.reward_exponent
 
     def _reward_cm_design(self):
-        # print(''.join(self.design.primary))
-        # print(self.target.sequence_constraints)
-        # print(self.target.dot_bracket)
-        # print(self.design.primary)
-
-        self.design._primary_list = [x if x is not None else y for x, y in zip(self.design._primary_list, self.target.sequence_constraints)]
+        # self.design._primary_list = [x if x is not None else y for x, y in zip(self.design._primary_list, self.target.sequence_constraints)]
+        self.design._primary_list = [x if x is not None else y for x, y in zip(self.design._primary_list, self.target.local_target)]
         fasta_path = Path(self.working_dir, 'tmp.fasta')
 
         with open(f"{fasta_path.resolve()}", 'w') as f:
             f.write(f">{self.target.id}\n{''.join(self.design.primary)}")
         
+        
+
         try:
             hit_df = self.infernal.search_database(cm_database=self.cm_db, identifier=self.cm_name, fasta_db=str(fasta_path.resolve()))
         except ValueError as e:
             print(e)
         except Exception as e:
             print(e)
-        # print(hit_df)
-        # hit_df = list(set(hit_df))
         if hit_df.empty:
             reward = -200
         else:
             hit_df.loc[:, 'score'] = hit_df['score'].astype(float)
             reward = hit_df['score'].max()
-        # else:
-        #     hit_df.loc[:, 'E-value'] = hit_df['E-value'].astype(float)
-        #     
-        #     if hit_df['E-value'].min() > self.max_e:
-        #         reward = 0
-        #     elif 1 < hit_df['E-value'].min() < self.max_e:
-        #         reward = self.max_e - hit_df['E-value'].min()
-        #         if reward <0:
-        #             print(hit_df)
-        #             print(hit_df['E-value'].min(), reward)
-        #     else:
-        #         reward = # ((1 - hit_df['E-value'].max()) ** 9) * self.max_e * 10
-        #         # if reward <0:
-        #         #     print(reward)
-        #         #     print(hit_df)
-        #         #     print(hit_df['E-value'].min(), reward)
-        #     # print(hit_df['E-value'].min(), reward, ''.join(self.design.primary))
-        # reward = max(0, reward)
-
         fasta_path.unlink()
 
         episode_info = EpisodeInfo(
@@ -1716,8 +1694,43 @@ class RnaDesignEnvironment(Environment):
 
         return reward
 
+    def _reward_rri_design(self):
+        # self.design._primary_list = [x if x is not None else y for x, y in zip(self.design._primary_list, self.target.sequence_constraints)]
+        self.design._primary_list = [x if x is not None else y for x, y in zip(self.design._primary_list, self.target.local_target)]
+
+        design = ''.join(self.design.primary)
+
+        output = subprocess.check_output(['IntaRNA', self.rri_target, design]) 
+
+        if output.decode('utf-8').split('\n')[-3].startswith('energy: '):
+            energy = float(output.decode('utf-8').split('\n')[-3].replace('energy: ', '').replace(' kcal/mol', ''))
+            reward = -1 * energy
+        else:
+            reward = 0
+
+        reward = reward ** 3
+
+        reward = max(0, reward)
         
+        episode_info = EpisodeInfo(
+        target_id=self.target.id,
+        time=time.time(),
+        normalized_hamming_distance=reward,
+        folding=None,
+        folding_counter=1,
+        candidate=design,
+        agent_gc=None,
+        desired_gc=None,
+        gc_content=None,
+        delta_gc=None,
+        gc_satisfied=None,
+        interactions=None,
+        target=self.target.dot_bracket,
+        )
         
+        self.episodes_info.append(episode_info)
+
+        return reward
 
     def _get_reward(self, terminal):
         """
@@ -1734,10 +1747,11 @@ class RnaDesignEnvironment(Environment):
 
         if self.cm_design:
             return self._reward_cm_design()
+        elif self.rri_design:
+            return self._reward_rri_design()
 
 
         # reward formulation for RNA local Design, excluding local improvement steps and gc content!!!!
-        # print(self.design.primary)
         if self._env_config.local_design:
             return self.reward_local_design()
         else:

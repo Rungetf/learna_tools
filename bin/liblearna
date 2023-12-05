@@ -127,6 +127,8 @@ parser.add_argument("--cm_design", action="store_true", help="Activate CM design
 parser.add_argument("--cm_path", type=str, default='rfam_cms/Rfam.cm', help="path to the CM database")
 parser.add_argument("--cm_name", type=str, default='RF00008', help="Specific cm to design for")
 parser.add_argument("--seed", type=int, default=42, help="Seed for task sampling")
+parser.add_argument("--rri_design", action="store_true", help="Activate CM design")
+parser.add_argument("--rri_target", type=str, default='UUUAAAUUAAAAAAUCAUAGAAAAAGUAUCGUUUGAUACUUGUGAUUAUACUCAGUUAUACAGUAUCUUAAGGUGUUAUUAAUAGUGGUGAGGAGAAUUUAUGAAGCUUUUCAAAAGCUUGCUUGUGGCACCUGCAACUCUUGGUCUUUUAGCACCAAUGACCGCUACUGCUAAU', help="Target for RRI design")
 
 args = parser.parse_args()
 
@@ -180,6 +182,8 @@ env_config = RnaDesignEnvironmentConfig(
     cm_name=args.cm_name,
     working_dir=args.working_dir,
     seed=args.seed,
+    rri_design=args.rri_design,
+    rri_target=args.rri_target,
     # rna_id='1',
     # structure_only=args.structure_only,
     # training_data=args.training_data,
@@ -190,7 +194,10 @@ env_config = RnaDesignEnvironmentConfig(
 if not args.input_file:
     raise UserWarning('Error: Please provide an input file.')
 data = read_task_description(args.input_file)
+
 data = data.replace(np.nan, None)
+
+print(data)
 
 if args.desired_gc:
     data.loc[:, 'globgc'] = args.desired_gc
@@ -206,7 +213,7 @@ dot_brackets = list((i, db, seq, gc, en) for i, db, seq, gc, en in zip(data['Id'
                                                                        data['globen']))
 
 
-# print(dot_brackets)
+print(dot_brackets)
 
 # print(env_config.control_gc)
 

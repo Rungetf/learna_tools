@@ -48,6 +48,8 @@ def read_task_description(path):
             line = line.replace('\n', '')
             task = {'Id': line[1:]}
             for l in lines[i+1:]:
+                if not l.strip():
+                    continue
 
                 # l = l.rstrip()
                 if l.startswith('>'):

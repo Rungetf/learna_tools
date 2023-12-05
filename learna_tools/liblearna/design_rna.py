@@ -66,7 +66,7 @@ def _get_episode_finished(timeout, stop_once_solved, num_solutions, pbar, cm_des
 
         if cm_design:
             # if len(runner.episode_rewards) % 100 == 0:
-            max_steps = 300  #500000
+            max_steps = 10000  #500000
             print(len(runner.episode_rewards), elapsed_time, runner.episode_rewards[-1], candidate_solution, target)
             if len(runner.episode_rewards) >= max_steps:
                 return False
