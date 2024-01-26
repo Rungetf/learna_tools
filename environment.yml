@@ -1,4 +1,4 @@
-name: learna_tools
+name: learna_tools1
 channels:
   - bioconda
   - lb_arrakistx
