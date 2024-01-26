@@ -1,4 +1,5 @@
 import subprocess
+import datetime
 import numpy as np
 import pandas as pd
 
@@ -46,13 +47,18 @@ def plot_with_varna(pairs, sequence, Id, plot_dir='plots', plot_type='radiate', 
 
         varna_path = str(Path(plot_dir, f"{Id}").resolve())
         if plot_type == 'radiate':
-            subprocess.Popen(["varna", '-i', str(ct_path.resolve()), '-o', varna_path + '_radiate.png', '-algorithm', 'radiate', '-resolution', resolution, '-bpStyle', 'lw', '-auxBPs', tertiary_bp], stderr=subprocess.STDOUT, stdout=subprocess.PIPE).communicate()[0]
+            subprocess.Popen(["varna", '-i', str(ct_path.resolve()), '-o', varna_path + '_radiate.png', '-algorithm', 'radiate', '-resolution', resolution, '-bpStyle', 'lw', '-auxBPs', tertiary_bp], stderr=subprocess.STDOUT, stdout=subprocess.PIPE).communicate()[0]  # -> to plot structure only: '-basesStyle1', 'fill=#FFFFFF,label=#FFFFFF,number=#FFFFFF', '-applyBasesStyle1on', ','.join([str(i) for i in range(1, len(sequence)+1)]),
         elif plot_type == 'line':
             subprocess.Popen(["varna", '-i', str(ct_path.resolve()), '-o', varna_path + '_line.png', '-algorithm', 'line', '-resolution', resolution, '-bpStyle', 'lw', '-auxBPs', tertiary_bp], stderr=subprocess.STDOUT, stdout=subprocess.PIPE).communicate()[0]
 
 
 
-def plot_df_with_varna(df, plot_dir='plots', plot_type='radiate', resolution='2.0', show=False):
+def plot_df_with_varna(df, plot_dir='plots', name='', plot_type='radiate', resolution='2.0', show=False):
+    if name:
+        plot_dir = Path(plot_dir, name)
+    else:
+        current_time = f'{datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}'
+        plot_dir = Path(plot_dir, current_time)
     Ids = defaultdict(list)
     for i, row in df.iterrows():
         pairs = db2pairs(row['structure'])
@@ -80,14 +86,24 @@ def plot_sequence_logo(df, plotting_dir='plots', name='current_sequence_logo', s
 
     All sequences have to be of the same length.
     """
+
     outdir = Path(plotting_dir, 'logos')
     outdir.mkdir(exist_ok=True, parents=True)
     sequences = df['sequence'].to_list()
     counts_mat = lm.alignment_to_matrix(sequences) / len(sequences)
     counts_mat.head()
-    logo = lm.Logo(counts_mat, stack_order='small_on_top')  # , vsep=0.05, stack_order='small_on_top')
+    logo = lm.Logo(counts_mat, stack_order='small_on_top', figsize=[30, 6])  # , vsep=0.05, stack_order='small_on_top')
     logo.style_spines(visible=False)
-    logo.style_spines(spines=['left','bottom'], visible=True, linewidth=2)
+    logo.style_spines(spines=['left','bottom', 'top', 'right'], visible=True, linewidth=2)
+    
+    # Hide the x-axis labels and ticks
+    logo.ax.set_xticks([])
+    logo.ax.set_xticklabels([])
+    
+    # Hide the y-axis labels and ticks
+    logo.ax.set_yticks([])
+    logo.ax.set_yticklabels([])
+    
     save_path = Path(outdir, f"{name}.png")
     plt.savefig(save_path)
     if show:

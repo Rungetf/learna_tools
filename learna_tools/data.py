@@ -56,12 +56,20 @@ def read_task_description(path):
                     break
                 if l.startswith('#'):
                     l_list = l.split()
-                    task[l_list[0][1:]] = 'X'.join(l_list[1:])
+                    if l_list[0][1:] == 'str':
+                        l = ''.join(l.split('#str ')).replace('\n', '')
+                        task['str'] = l.replace(' ', 'X')
+                    elif l_list[0][1:] == 'seq':
+                        l = ''.join(l.split('#seq ')).replace('\n', '')
+                        task['seq'] = ''.join(l_list[1:]).replace('X', '').replace(' ', '')
+                    else:
+                        task[l_list[0][1:]] = ''.join(l_list[1:])
                 else:
                     task['str'] = l.rstrip()
             tasks.append(task)
 
     data = pd.DataFrame(tasks)
+    print(tasks)
 
     return data
 

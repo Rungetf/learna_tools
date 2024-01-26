@@ -43,7 +43,7 @@ def process_file(file_path, chunk_size):
 paths = list(Path('rri_results').glob('177534*.o'))
 
 all_results = []
-chunk_size = 1000  # Change this to your desired chunk size
+chunk_size = 100  # Change this to your desired chunk size
 for p in paths:
     print('### Processing file {} ###'.format(p))
     chunked_data = process_file(p, chunk_size)
@@ -64,6 +64,18 @@ for exp_id in final_agg['experiment_id'].unique():
     mean_reward = exp_data['mean', 'mean']
     std_dev = exp_data['mean', 'std']
     chunks = exp_data['chunk']
+    
+    outdir = Path('rri_analysis')
+    outdir.mkdir(exist_ok=True, parents=True)
+    outpath = Path(outdir, f"{exp_id.replace(' ', '-')}_chunksize_{chunk_size}_ci.tsv")
+
+    with open(outpath, 'w+') as f:
+        f.write('time'+'\t'+'high_ci_0.05'+'\t'+'low_ci_0.05'+'\t'+'mean'+'\n')
+        # f.write('1e-10'+'\t'+'0.0'+'\t'+'0.0'+'\t'+'0.0'+'\n')
+        for i, m, s in zip(chunks, mean_reward, std_dev):
+            low = m-s
+            high = m+s
+            f.write(f"{i}\t{low}\t{high}\t{m}\n")
 
     # Plotting the mean reward
     plt.plot(chunks, mean_reward, label=f'Experiment {exp_id}')
@@ -79,3 +91,6 @@ plt.ylabel('Average Energy')
 plt.title('Mean Energy with Standard Deviation as Confidence Bounds')
 plt.legend()
 plt.show()
+
+# time	high_ci_0.05	low_ci_0.05	mean
+# 1e-10	0.0	0.0	0.0

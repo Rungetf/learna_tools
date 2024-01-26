@@ -33,6 +33,7 @@ def process_file(file_path, chunk_size):
     experiment_id = exp_mapping[str(file_path.stem).split('[')[0]]
     seed = int(str(file_path.stem).split('[')[1].split(']')[0])
     df = df[:500000]
+    print(file_path.stem, df['Reward'].max(), df['Reward'].min())
     # df['Reward'] = df['Reward'].astype('float').replace(-200, 0.0)
 
     # Chunking data every N steps and calculating mean and std dev
@@ -45,7 +46,7 @@ def process_file(file_path, chunk_size):
 paths = list(Path('results_cm_design').glob('176920*.o'))
 
 all_results = []
-chunk_size = 1000  # Change this to your desired chunk size
+chunk_size = 500  # Change this to your desired chunk size
 for p in paths:
     print('### Processing file {} ###'.format(p))
     chunked_data = process_file(p, chunk_size)
@@ -67,6 +68,19 @@ for exp_id in final_agg['experiment_id'].unique():
     mean_reward = exp_data['mean', 'mean']
     std_dev = exp_data['mean', 'std']
     chunks = exp_data['chunk']
+
+    outdir = Path('cm_analysis_test')
+    outdir.mkdir(exist_ok=True, parents=True)
+    outpath = Path(outdir, f"{exp_id.replace(' ', '-')}_chunksize_{chunk_size}_ci.tsv")
+    
+    with open(outpath, 'w+') as f:
+        f.write('time'+'\t'+'high_ci_0.05'+'\t'+'low_ci_0.05'+'\t'+'mean'+'\n')
+        # f.write('1e-10'+'\t'+'0.0'+'\t'+'0.0'+'\t'+'0.0'+'\n')
+        for i, m, s in zip(chunks, mean_reward, std_dev):
+            low = m-s
+            high = m+s
+            f.write(f"{i}\t{low}\t{high}\t{m}\n")
+
 
     # Plotting the mean reward
     plt.plot(chunks, mean_reward, label=f'Experiment {exp_id}')

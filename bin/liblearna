@@ -3,7 +3,7 @@
 import warnings
 warnings.filterwarnings('ignore')
 
-
+import datetime
 import argparse
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'  # '2'
@@ -13,7 +13,7 @@ import pandas as pd
 
 from pathlib import Path
 
-from learna_tools.liblearna.design_rna import design_rna, get_distance_metric
+from learna_tools.liblearna.design_rna_inference_only import design_rna, get_distance_metric
 from learna_tools.liblearna.data.parse_dot_brackets import parse_dot_brackets, parse_local_design_data
 
 from learna_tools.liblearna.agent import NetworkConfig, get_network, AgentConfig, get_agent_fn
@@ -129,6 +129,15 @@ parser.add_argument("--cm_name", type=str, default='RF00008', help="Specific cm 
 parser.add_argument("--seed", type=int, default=42, help="Seed for task sampling")
 parser.add_argument("--rri_design", action="store_true", help="Activate CM design")
 parser.add_argument("--rri_target", type=str, default='UUUAAAUUAAAAAAUCAUAGAAAAAGUAUCGUUUGAUACUUGUGAUUAUACUCAGUUAUACAGUAUCUUAAGGUGUUAUUAAUAGUGGUGAGGAGAAUUUAUGAAGCUUUUCAAAAGCUUGCUUGUGGCACCUGCAACUCUUGGUCUUUUAGCACCAAUGACCGCUACUGCUAAU', help="Target for RRI design")
+parser.add_argument("--cm_threshold", type=float, default=10.0, help="Seed for task sampling")
+parser.add_argument("--rri_threshold", type=float, default=10.0, help="Seed for task sampling")
+parser.add_argument("--show_all_designs", action="store_true", help="Activate CM design")
+parser.add_argument("--hamming_tolerance", type=int, default=0, help="Seed for task sampling")
+parser.add_argument("--no_shared_agent", action="store_true", help="Activate CM design")
+parser.add_argument("--plotting_dir", type=str, default=None, help="select target directory for saving plots.")
+parser.add_argument("--results_dir", type=str, default=None, help="select target directory for saving results. Defaults to ./results")
+parser.add_argument("--output_format", type=str, default='pickle', help="select an output format for the results. Options: pickle, csv, fasta")
+
 
 args = parser.parse_args()
 
@@ -197,7 +206,6 @@ data = read_task_description(args.input_file)
 
 data = data.replace(np.nan, None)
 
-print(data)
 
 if args.desired_gc:
     data.loc[:, 'globgc'] = args.desired_gc
@@ -213,30 +221,107 @@ dot_brackets = list((i, db, seq, gc, en) for i, db, seq, gc, en in zip(data['Id'
                                                                        data['globen']))
 
 
-print(dot_brackets)
+ids = [id for id, _, _, _, _ in dot_brackets]
 
-# print(env_config.control_gc)
+processed_ids = []
 
-sols = design_rna(
-    dot_brackets,
-    timeout=args.timeout,
-    restore_path=None,
-    stop_learning=False,
-    restart_timeout=args.restart_timeout,
-    network_config=network_config,
-    agent_config=agent_config,
-    env_config=env_config,
-    num_solutions=args.min_solutions,
-)
+assert len(ids) == len(set(ids)), 'Ids must be unique'
 
-solutions = pd.DataFrame(sols)
+def return_intermediate_solutions():
+    for i, solutions in design_rna(
+        dot_brackets,
+        timeout=args.timeout,
+        restore_path=None,
+        stop_learning=False,
+        restart_timeout=args.restart_timeout,
+        network_config=network_config,
+        agent_config=agent_config,
+        env_config=env_config,
+        num_solutions=args.min_solutions,
+        hamming_tolerance=args.hamming_tolerance,
+        share_agent=not args.no_shared_agent,
+        num_cores = 1,  #  args.num_cores,
+        show_all_designs=args.show_all_designs,
+        report_cm_threshold=args.cm_threshold,
+        report_rri_threshold=args.rri_threshold,
+    ):
+        if i not in processed_ids:
+            processed_ids.append(i)
+            yield i, solutions
+# sols = design_rna(
+#         dot_brackets,
+#         timeout=args.timeout,
+#         restore_path=None,
+#         stop_learning=False,
+#         restart_timeout=args.restart_timeout,
+#         network_config=network_config,
+#         agent_config=agent_config,
+#         env_config=env_config,
+#         num_solutions=args.min_solutions,
+#         hamming_tolerance=args.hamming_tolerance,
+#     )
+# predictions = pd.DataFrame(preds)
+# print(sols)
+            
+current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
-print(solutions.to_markdown())
+for i, sols in return_intermediate_solutions():
+    solutions = pd.DataFrame(sols)
+    if solutions.empty:
+        print("\033[91m" + f'WARNING: No solutions found for target {i}' + "\033[0m")
+        continue
 
-if args.plot_structure:
-    plot_df_with_varna(solutions, show=args.show_plots, resolution=args.resolution)
+    if args.hamming_tolerance > 0:
+        solutions.sort_values(by='hamming_distance', inplace=True)
+    else:
+        solutions.sort_values(by='time', inplace=True)
 
-if args.plot_logo:
-    solutions.loc[:, 'length'] = solutions['sequence'].apply(len)
-    for name, group in solutions.groupby('length'):
-        plot_sequence_logo(group, show=args.show_logo, name=f"current_logo_liblearna_{name}")
+    solutions = solutions.reset_index(drop=True)
+
+    # if args.hamming_tolerance > 0:
+    #     subopt = predictions[predictions['hamming_distance'] <= args.hamming_tolerance]
+    #     solutions = pd.concat([solutions, subopt])
+    #     solutions = solutions.drop_duplicates('sequence')
+
+    # print(predictions)
+    print()
+    print('Solutions for target structure', i)
+    print()
+    print(solutions.to_markdown())
+    if args.plotting_dir is not None:
+        plotting_dir = Path(args.plotting_dir)
+        plotting_dir.mkdir(exist_ok=True, parents=True)
+    name = f'{i}_{current_time}'
+    if args.plot_structure:
+        if args.plotting_dir is not None:
+            plot_df_with_varna(solutions, show=args.show_plots, name=name, resolution=args.resolution, plot_dir=plotting_dir)
+        else:
+            plot_df_with_varna(solutions, show=args.show_plots, resolution=args.resolution, name=name)
+
+    if args.plot_logo:
+        for n, group in solutions.groupby('length'):
+            if args.plotting_dir is not None:
+                name = name + f'_length_{n}'
+                plot_sequence_logo(group, show=args.show_plots, plotting_dir=plotting_dir, name=name)
+            else:
+                plot_sequence_logo(group, show=args.show_plots, name=name)
+
+    if args.results_dir is not None:
+        results_dir = Path(args.results_dir)
+        results_dir.mkdir(exist_ok=True, parents=True)
+        if args.output_format == 'pickle':
+            solutions.to_pickle(results_dir / f'{name}.pkl')
+        elif args.output_format == 'csv':
+            solutions.to_csv(results_dir / f'{name}.csv')
+        elif args.output_format == 'fasta':
+            with open(results_dir / f'{name}.fasta', 'w') as f:
+                for j, row in solutions.iterrows():
+                    f.write(f'>{j}\n{row["sequence"]}\n{row["structure"]}\n')
+        else:
+            raise ValueError(f'Unknown output format {args.output_format}')
+    
+    if any(i not in processed_ids for i in ids):
+        print()
+        print('Continue with predictions for ids:', ', '.join([str(i) for i in ids if i not in processed_ids]))
+        print()
+

@@ -13,11 +13,13 @@ from learna_tools.tensorforce.runner import Runner
 from learna_tools.learna.agent import NetworkConfig, get_network, AgentConfig, get_agent_fn
 from learna_tools.learna.environment import RnaDesignEnvironment, RnaDesignEnvironmentConfig
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 SOLUTIONS = []
 CANDIDATES = {}
 
 
-def _get_episode_finished(timeout, stop_once_solved, num_solutions, hamming_tolerance, pbar):
+def _get_episode_finished(timeout, stop_once_solved, num_solutions, hamming_tolerance, pbar=None, solutions=None):  # , SOLUTIONS):
     """
     Check for timeout after each episode of designing one entire target structure.
 
@@ -39,6 +41,11 @@ def _get_episode_finished(timeout, stop_once_solved, num_solutions, hamming_tole
         elapsed_time = time.time() - start_time
         hamming_distance = env.episodes_info[-1].hamming_distance
         structure = env.episodes_info[-1].structure
+        if solutions is None:
+            global CANDIDATES
+            global SOLUTIONS
+        else: 
+            SOLUTIONS = solutions
         # PREDICTIONS.append({'Id': target_id,
         #                     'time': elapsed_time,
         #                     'hamming_distance': hamming_distance,
@@ -47,8 +54,9 @@ def _get_episode_finished(timeout, stop_once_solved, num_solutions, hamming_tole
         #                     'structure': structure,
         #                     })
         if last_reward == 1.0 or hamming_distance <= hamming_tolerance:
-            try:
-                CANDIDATES[candidate_solution] = True
+            # use only unique solutions
+            if candidate_solution not in [s['sequence'] for s in SOLUTIONS]:
+                # CANDIDATES[candidate_solution] = True
                 SOLUTIONS.append({'Id': target_id,
                                   'time': elapsed_time,
                                   'hamming_distance': hamming_distance,
@@ -56,19 +64,50 @@ def _get_episode_finished(timeout, stop_once_solved, num_solutions, hamming_tole
                                   'sequence': candidate_solution,
                                   'structure': structure,
                                   })
-                pbar.update(1)
-            except KeyError as e:
-                pass
+                if pbar is not None:
+                    pbar.update(1)
 
         # print(elapsed_time, last_reward, last_fractional_hamming, candidate_solution)
-
+        num_solutions_satisfied = len(SOLUTIONS) >= num_solutions
+        # print(num_solutions_satisfied)
         no_timeout = not timeout or elapsed_time < timeout
         stop_since_solved = stop_once_solved and last_reward == 1.0
-        keep_running = not stop_since_solved and no_timeout and len(SOLUTIONS) < num_solutions
+        keep_running = not stop_since_solved and no_timeout and not num_solutions_satisfied
+        # print(keep_running, stop_since_solved, no_timeout, num_solutions_satisfied)
         return keep_running
-
     return episode_finished
 
+def worker(config, target):
+    solutions = []
+    environment = RnaDesignEnvironment([target], config.env_config)
+    get_agent = get_agent_fn(
+        environment=environment,
+        network=get_network(config.network_config),
+        agent_config=config.agent_config,
+        
+        session_config=tf.ConfigProto(
+            intra_op_parallelism_threads=1,
+            inter_op_parallelism_threads=1,
+            allow_soft_placement=True,
+            # device_count={"CPU": 1},
+        ),
+        
+        restore_path=config.restore_path,
+    )
+    runner = Runner(get_agent, environment)
+    runner.run(
+        deterministic=False,
+        restart_timeout=config.restart_timeout,
+        stop_learning=config.stop_learning,
+        episode_finished=_get_episode_finished(timeout,
+                                               False,
+                                               config.num_solutions,
+                                               config.hamming_tolerance,
+                                               solutions,
+                                               # SOLUTIONS,
+                                               ),
+    )
+    return SOLUTIONS
 
 def design_rna(
     dot_brackets,
@@ -81,6 +120,8 @@ def design_rna(
     env_config,
     num_solutions,
     hamming_tolerance=0,
+    share_agent=True,
+    num_cores=1,
 ):
     """
     Main function for RNA design. Instantiate an environment and an agent to run in a
@@ -99,45 +140,110 @@ def design_rna(
     Returns:
         Episode information.
     """
-    session_config = tf.ConfigProto(
-        intra_op_parallelism_threads=1,
-        inter_op_parallelism_threads=1,
-        allow_soft_placement=True,
-        device_count={"CPU": 1},
-    )
+    print('### Start Predictions')
+    print()
+    print('### Solutions per target:', num_solutions)
+    print('### Number of targets:', len(dot_brackets))
+    print('### With Ids:', ', '.join([str(i) for i, _ in dot_brackets]))
+    print('### Timeout per target:', timeout)
+    print()
+    
+    if num_cores > 1:
+        config = {
+            'dot_brackets': dot_brackets,
+            'timeout': timeout,
+            'restore_path': restore_path,
+            'stop_learning': stop_learning,
+            'restart_timeout': restart_timeout,
+            'network_config': network_config,
+            'agent_config': agent_config,
+            'env_config': env_config,
+            'num_solutions': num_solutions,
+            'hamming_tolerance': hamming_tolerance,
+            'share_agent': share_agent
+        }
+        
+        with ThreadPoolExecutor(max_workers=num_cores) as executor:
+            futures = {executor.submit(worker, config, target=target): target for target in dot_brackets}
+            for future in as_completed(futures):
+                result = future.result()
+                yield futures[future], result
 
-    env_config.use_conv = any(map(lambda x: x > 1, network_config.conv_sizes))
-    env_config.use_embedding = bool(network_config.embedding_size)
-    environment = RnaDesignEnvironment(dot_brackets, env_config)
-
-    pbar = tqdm(total=num_solutions)
-
-    network = get_network(network_config)
-    # Runner restarts the agent by calling get_agent again
-    get_agent = get_agent_fn(
-        environment=environment,
-        network=network,
-        agent_config=agent_config,
-        session_config=session_config,
-        restore_path=restore_path,
-    )
-    runner = Runner(get_agent, environment)
-
-    # stop_once_solved = len(dot_brackets) == 1
-    stop_once_solved = False
-    runner.run(
-        deterministic=False,
-        restart_timeout=restart_timeout,
-        stop_learning=stop_learning,
-        episode_finished=_get_episode_finished(timeout,
-                                               stop_once_solved,
-                                               num_solutions,
-                                               hamming_tolerance,
-                                               pbar),
-    )
-    return SOLUTIONS
-
-
+    else:
+    
+        session_config = tf.ConfigProto(
+                intra_op_parallelism_threads=1,
+                inter_op_parallelism_threads=1,
+                allow_soft_placement=True,
+                device_count={"CPU": 1},
+            )
+        
+        env_config.use_conv = any(map(lambda x: x > 1, network_config.conv_sizes))
+        env_config.use_embedding = bool(network_config.embedding_size)
+        network = get_network(network_config)
+        
+        if share_agent:
+            dummy_env = RnaDesignEnvironment([dot_brackets[0]], env_config)    
+        
+            get_agent = get_agent_fn(
+                environment=dummy_env,
+                network=network,
+                agent_config=agent_config,
+                session_config=session_config,
+                restore_path=restore_path,
+            )
+    
+        
+    
+        for i, target in dot_brackets:
+            print(f'### Process target {i}')
+            print()
+            
+            pbar = tqdm(total=num_solutions)
+        
+            environment = RnaDesignEnvironment([(i, target)], env_config)
+    
+            if not share_agent:
+            
+                get_agent = get_agent_fn(
+                    environment=environment,
+                    network=network,
+                    agent_config=agent_config,
+                    session_config=session_config,
+                    restore_path=restore_path,
+                )
+        
+            global SOLUTIONS
+        
+            SOLUTIONS = []
+        
+            # Runner restarts the agent by calling get_agent again
+            
+            
+            runner = Runner(get_agent, environment)
+        
+            # stop_once_solved = len(dot_brackets) == 1
+            stop_once_solved = False
+            runner.run(
+                deterministic=False,
+                restart_timeout=restart_timeout,
+                stop_learning=stop_learning,
+                episode_finished=_get_episode_finished(timeout,
+                                                       stop_once_solved,
+                                                       num_solutions,
+                                                       hamming_tolerance,
+                                                       pbar,
+                                                       # SOLUTIONS,
+                                                       ),
+            )
+            pbar.close()
+            if len(SOLUTIONS) < num_solutions:
+                print("\033[91m" + f'WARNING: Found {len(SOLUTIONS)} solutions for target {i}' +
+                      f' but wanted {num_solutions}.')
+                print('Please consider increasing the timeout or decreasing the number of solutions' + "\033[0m.")
+            yield i, SOLUTIONS
+        
+    
 if __name__ == "__main__":
     import argparse
     from pathlib import Path
@@ -246,4 +352,5 @@ if __name__ == "__main__":
         env_config=env_config,
         num_solutions=args.min_solutions,
         hamming_tolerance=0,
+        share_agent=True,
     )

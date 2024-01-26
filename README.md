@@ -1,15 +1,14 @@
 # LEARNA-tools
 Generative RNA Design with Automated Reinforcement Learning
 
-`LEARNA-tools` is a Python package that implements the commandline interface of
-LEARNA and libLEARNA as documented in the following publications
+`LEARNA-tools` is a Python package that provides the commandline interface of
+LEARNA and libLEARNA. The package covers the source code of the following publications
 
 - [Learning to Design RNA](https://openreview.net/pdf?id=ByfyHh05tQ)
-- [Towards Automated Design of Riboswitches](https://icml-compbio.github.io/2023/papers/WCBICML2023_paper42.pdf)
+- [Partial RNA Design](https://www.biorxiv.org/content/10.1101/2023.12.29.573656v1.full.pdf)
 
 ---
 ## Installation
-
 
 ---
 ### Requirements
